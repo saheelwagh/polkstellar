@@ -544,17 +544,7 @@ vercel deploy --prod
 
 **Demo Script (2 minutes):**
 
-| Time | Action | What to Say |
-|------|--------|-------------|
-| 0:00 | Title slide | "Freelancing is broken. Upwork takes 20%. Clients ghost. We fix this." |
-| 0:15 | Client Dashboard | "Create Project: Logo Design. 3 milestones: Concept, Revision, Final." |
-| 0:30 | Fund Project | "Client deposits $1000 USDC into escrow. Money is locked." |
-| 0:45 | Freelancer View | "Freelancer sees project. Submits deliverable hash for Milestone 1." |
-| 1:00 | Client View | "Client reviews. Clicks Approve. Polkadot records approval." |
-| 1:15 | Release Funds | "Stellar releases $500 to freelancer. Instant. No fees." |
-| 1:30 | Show Wallets | "Freelancer wallet: +$500. Escrow: $500 remaining." |
-| 1:45 | Dispute Flow | "What if there's a dispute? Third-party arbitrator resolves." |
-| 2:00 | Closing | "Trustless freelancing. Polkadot verifies. Stellar pays. Zero fees." |
+
 
 #### Sprint 4.3: Documentation (0.5 hours)
 
@@ -590,6 +580,7 @@ vercel deploy --prod
 ### Stellar Commands
 
 ```bash
+# check soroban docs 
 # Build contract
 soroban contract build
 
@@ -614,6 +605,7 @@ soroban contract invoke --id <CONTRACT_ID> --network futurenet -- \
 cargo contract build
 
 # Upload to local node
+# deploy to testnet instead
 cargo contract upload --suri //Alice
 
 # Instantiate
@@ -648,7 +640,7 @@ vercel deploy --prod
 | Polkadot contract | Medium | Use only Stellar escrow |
 | Project detail page | Low | Use dashboard only |
 | Dispute flow | Low | Mention as "future work" |
-
+##### do not include dispute flow in first build 
 ### If Ahead of Schedule
 
 | Add This | Impact |
@@ -711,5 +703,239 @@ ADMIN_SECRET_KEY=
 
 ---
 
+# 🔄 REVISED SPRINT PLAN (Modular / Single-Chain Ready)
+
+> **Use this plan if:** You may only deploy on ONE chain, or want to complete each chain as a standalone deliverable before integrating.
+
+## Key Changes from Original Plan
+
+| Original | Revised |
+|----------|---------|
+| Day 2: Both contracts in parallel | Day 2: Stellar ONLY (complete + integrated) |
+| Day 3: Integrate both | Day 3: Polkadot ONLY (complete + integrated) |
+| Interleaved work | Sequential, each chain is a "checkpoint" |
+
+## Benefits of Modular Approach
+
+1. **Checkpoint after Day 2:** Stellar-only version is fully demoable
+2. **Flexibility:** If time runs out, you have ONE working chain
+3. **Cleaner commits:** Each chain is a complete feature
+4. **Easier debugging:** Isolate issues to one chain at a time
+
+---
+
+## 📅 REVISED SPRINT BREAKDOWN
+
+### Day 1: Frontend + Environment (6 hours) — NO CHANGE
+
+Same as original plan:
+- 1.5 hours: Setup both environments (scaffold only)
+- 4.5 hours: Build all 3 pages with mock data
+
+**Deliverable:** Complete UI with fake data, both dev environments ready
+
+---
+
+### Day 2: STELLAR COMPLETE (7 hours)
+
+> **Goal:** Fully working Stellar escrow with frontend integration
+
+#### Sprint 2.1: Stellar Contract (3 hours)
+
+```rust
+// Core functions to implement
+fn create_project(client, freelancer, milestones: Vec<i128>) -> u64
+fn fund_project(project_id: u64, amount: i128)
+fn release_milestone(project_id: u64, milestone_id: u32) -> Result<i128, Error>
+fn get_project(project_id: u64) -> Project
+fn get_balance(project_id: u64) -> i128
+```
+
+**Tasks:**
+- [ ] Hour 1: Generate contract with AI, review
+- [ ] Hour 2: Fix errors, add tests, `cargo test`
+- [ ] Hour 3: Deploy to Futurenet, test via CLI
+
+#### Sprint 2.2: Stellar Frontend Integration (3 hours)
+
+**Create `frontend/src/lib/stellar.ts`:**
+
+```typescript
+export async function connectFreighter(): Promise<string>
+export async function createProject(freelancer: string, milestones: number[]): Promise<string>
+export async function fundProject(projectId: string, amount: number): Promise<void>
+export async function releaseMilestone(projectId: string, milestoneId: number): Promise<void>
+export async function getProjectDetails(projectId: string): Promise<Project>
+```
+
+**Tasks:**
+- [ ] Hour 1: Implement Stellar service functions
+- [ ] Hour 2: Connect Client Dashboard (create, fund, release)
+- [ ] Hour 3: Connect Freelancer Dashboard (view earnings)
+
+#### Sprint 2.3: Stellar Demo Test (1 hour)
+
+- [ ] Full flow test: Create → Fund → Release → Verify wallet
+- [ ] Fix any bugs
+- [ ] Record quick backup video of Stellar-only demo
+
+**🎯 CHECKPOINT: Stellar-only version is COMPLETE and DEMOABLE**
+
+If hackathon only allows Stellar, you're done with core functionality!
+
+---
+
+### Day 3: POLKADOT COMPLETE (5 hours)
+
+> **Goal:** Add Polkadot registry for deliverable tracking
+
+#### Sprint 3.1: Polkadot Contract (2.5 hours)
+
+```rust
+// Core functions to implement
+#[ink(message)]
+fn register_project(project_id: u64, title: String, milestone_count: u32)
+
+#[ink(message)]
+fn submit_deliverable(project_id: u64, milestone_id: u32, hash: Hash)
+
+#[ink(message)]
+fn get_deliverable(project_id: u64, milestone_id: u32) -> Option<Hash>
+
+#[ink(message)]
+fn mark_approved(project_id: u64, milestone_id: u32)
+```
+
+**Tasks:**
+- [ ] Hour 1: Generate contract with AI
+- [ ] Hour 1.5: Build and test locally
+- [ ] Hour 2.5: Deploy to local node or testnet
+
+#### Sprint 3.2: Polkadot Frontend Integration (2 hours)
+
+**Create `frontend/src/lib/polkadot.ts`:**
+
+```typescript
+export async function connectPolkadotWallet(): Promise<string>
+export async function registerProject(projectId: string, title: string): Promise<void>
+export async function submitDeliverable(projectId: string, milestoneId: number, hash: string): Promise<void>
+export async function getDeliverable(projectId: string, milestoneId: number): Promise<string | null>
+```
+
+**Tasks:**
+- [ ] Hour 1: Implement Polkadot service functions
+- [ ] Hour 2: Add deliverable submission to Freelancer view
+- [ ] Hour 2: Show deliverable hash in Client approval view
+
+#### Sprint 3.3: Cross-Chain Flow Test (0.5 hours)
+
+- [ ] Test: Submit on Polkadot → Approve → Release on Stellar
+- [ ] Verify both wallets show correct state
+
+**🎯 CHECKPOINT: Full cross-chain version is COMPLETE**
+
+---
+
+### Day 4: Polish & Demo (2 hours)
+
+Same as original:
+- [ ] UI polish, error handling
+- [ ] Deploy frontend
+- [ ] Rehearse demo 3x
+- [ ] Record backup video
+- [ ] Complete README
+
+---
+
+## 🎬 DEMO SCRIPTS (Choose Based on Deployment)
+
+### Stellar-Only Demo (90 seconds)
+
+| Time | Action | Script |
+|------|--------|--------|
+| 0:00 | Intro | "Freelancers wait 30 days for payment. We fix that." |
+| 0:15 | Create Project | Client creates "Logo Design" with 3 milestones |
+| 0:30 | Fund | Client deposits $1000 USDC into escrow |
+| 0:45 | Show Balance | "Money is locked. Neither party can run." |
+| 1:00 | Approve | Client approves Milestone 1 |
+| 1:10 | Release | Funds release instantly to freelancer |
+| 1:20 | Show Wallet | Freelancer wallet: +$500 |
+| 1:30 | Close | "5 seconds, not 30 days. Zero platform fees." |
+
+### Full Cross-Chain Demo (2 minutes)
+
+| Time | Action | Script |
+|------|--------|--------|
+| 0:00 | Intro | "Trustless freelancing. Two chains. One solution." |
+| 0:15 | Create + Fund | Client creates and funds project on Stellar |
+| 0:30 | Submit Work | Freelancer submits deliverable hash on Polkadot |
+| 0:45 | Show Proof | "Work is recorded on Polkadot. Immutable proof." |
+| 1:00 | Approve | Client reviews, approves on Polkadot |
+| 1:15 | Release | Stellar releases funds automatically |
+| 1:30 | Show Wallets | Both chains updated, freelancer paid |
+| 1:45 | Dispute | "What if there's a dispute? On-chain evidence." |
+| 2:00 | Close | "Polkadot verifies. Stellar pays. No middleman." |
+
+---
+
+## ⏱️ TIME COMPARISON
+
+| Scenario | Day 1 | Day 2 | Day 3 | Day 4 | Total |
+|----------|-------|-------|-------|-------|-------|
+| **Original (parallel)** | 6h | 7h | 4.5h | 2.5h | 20h |
+| **Revised (sequential)** | 6h | 7h | 5h | 2h | 20h |
+| **Stellar-only** | 6h | 7h | — | 2h | 15h |
+| **Polkadot-only** | 6h | — | 7h | 2h | 15h |
+
+**Key insight:** Sequential approach gives you a working demo after Day 2, with 5 hours of buffer if you stop there.
+
+---
+
+## 🚨 DECISION POINTS
+
+### After Day 1:
+- ✅ Frontend complete → Proceed to Day 2
+- ❌ Frontend incomplete → Cut to 2 pages, skip marketplace
+
+### After Day 2 (Stellar complete):
+- ✅ Stellar working → Proceed to Polkadot
+- ⚠️ Stellar buggy → Spend Day 3 fixing Stellar, skip Polkadot
+- ❌ Stellar broken → Pivot to Polkadot-only
+
+### After Day 3:
+- ✅ Both chains working → Polish and demo prep
+- ⚠️ Integration issues → Demo chains separately
+- ❌ Major issues → Use Stellar-only demo
+
+---
+
+## ✅ REVISED CHECKLIST
+
+### Day 1 Complete:
+- [ ] All pages render with mock data
+- [ ] Navigation works
+- [ ] Both dev environments scaffolded
+
+### Day 2 Complete (STELLAR CHECKPOINT):
+- [ ] Stellar contract deployed to Futurenet
+- [ ] Frontend creates/funds/releases via Stellar
+- [ ] Can demo Stellar-only flow end-to-end
+- [ ] Backup video recorded
+
+### Day 3 Complete (FULL VERSION):
+- [ ] Polkadot contract deployed
+- [ ] Frontend submits deliverables via Polkadot
+- [ ] Cross-chain flow works
+- [ ] Both wallets show correct state
+
+### Day 4 Complete:
+- [ ] Frontend deployed
+- [ ] Demo rehearsed
+- [ ] README complete
+- [ ] Final video recorded
+
+---
+
 *Last Updated: Planning Phase*
 *Status: Ready to Start Day 1*
+*Mode: Modular (Stellar-first, Polkadot-second)*

@@ -37,23 +37,25 @@ fn exercise_2a() {
     // - is_completed: bool
     
     // TODO: Create a milestone instance
-    // let milestone = Milestone {
-    //     id: 1,
-    //     title: String::from("Wireframes"),
-    //     amount: 1000,
-    //     is_completed: false,
-    // };
+    let milestone = Milestone {
+        id: 1,
+        title: String::from("Wireframes"),
+        amount: 1000,
+        is_completed: false,
+    };
     
     // TODO: Print milestone details
     // println!("Milestone {}: {} - {} USDC", milestone.id, milestone.title, milestone.amount);
-    
-    println!("(Define Milestone struct to complete)");
+    println("Milestone {}: {} - {} USDC", milestone.id, milestone.title, milestone.amount);
 }
 
 // TODO: Define Milestone struct here
-// struct Milestone {
-//     ...
-// }
+ struct Milestone {
+  id : u32,
+  title : String,
+  amount : 128,
+  is_completed: bool,
+ }
 
 // ----------------------------------------------------------------------------
 // EXERCISE 2B: Enum for Status
@@ -71,14 +73,20 @@ fn exercise_2a() {
 // enum MilestoneStatus {
 //     ...
 // }
-
+enum MilestoneStatus{
+    Pending,
+    Submitted(String),
+    Approved,
+    Disputed(String),
+    Released
+}
 fn exercise_2b() {
     println!("\n--- 2B: Status Enum ---");
     
     // TODO: Create different status values
-    // let status1 = MilestoneStatus::Pending;
-    // let status2 = MilestoneStatus::Submitted(String::from("ipfs://Qm123..."));
-    // let status3 = MilestoneStatus::Disputed(String::from("Work incomplete"));
+    let status1 = MilestoneStatus::Pending;
+    let status2 = MilestoneStatus::Submitted(String::from("ipfs://Qm123..."));
+    let status3 = MilestoneStatus::Disputed(String::from("Work incomplete"));
     
     // TODO: Implement a function to get status as string
     // println!("Status 1: {}", status_to_string(&status1));
@@ -89,11 +97,16 @@ fn exercise_2b() {
 }
 
 // TODO: Implement this function using match
-// fn status_to_string(status: &MilestoneStatus) -> String {
-//     match status {
-//         ...
-//     }
-// }
+fn status_to_string(status: &MilestoneStatus) -> String {
+    match status {
+        MilestoneStatus::Pending => String::from("Pending"),
+        MilestoneStatus::Submitted(hash) => format!("Submitted: {}", hash),
+        MilestoneStatus::Approved => String::from("Approved"),
+        MilestoneStatus::Disputed(reason) => format!("Disputed: {}", reason),
+        MilestoneStatus::Released => String::from("Released"),
+    
+    }
+}
 
 // ----------------------------------------------------------------------------
 // EXERCISE 2C: Pattern Matching
@@ -119,9 +132,16 @@ fn exercise_2c() {
 }
 
 // TODO: Implement this function
-// fn process_milestone(status: MilestoneStatus) -> String {
-//     ...
-// }
+fn process_milestone(status: MilestoneStatus) -> String {
+    match status {
+        MilestoneStatus::Pending => String::from("Waiting for work"),
+        MilestoneStatus::Submitted(hash) => format!("Review deliverable: {}", hash),
+        MilestoneStatus::Approved => String::from("Ready for payment"),
+        MilestoneStatus::Disputed(reason) => format!("Dispute: {}", reason),
+        MilestoneStatus::Released => String::from("Payment complete"),
+    
+    }
+}
 
 // ----------------------------------------------------------------------------
 // EXERCISE 2D: Struct with Methods (impl block)
@@ -261,56 +281,56 @@ fn exercise_2d() {
 // SOLUTION 2D: Struct Methods
 // ============================================================================
 //
-// struct Project {
-//     id: u64,
-//     client: String,
-//     freelancer: String,
-//     total_budget: u128,
-//     released_amount: u128,
-//     milestones: Vec<u128>,
-//     released_milestones: Vec<bool>,
-// }
+struct Project {
+    id: u64,
+    client: String,
+    freelancer: String,
+    total_budget: u128,
+    released_amount: u128,
+    milestones: Vec<u128>,
+    released_milestones: Vec<bool>,
+}
 //
-// impl Project {
-//     fn new(id: u64, client: String, freelancer: String, milestones: Vec<u128>) -> Project {
-//         let total_budget: u128 = milestones.iter().sum();
-//         let milestone_count = milestones.len();
-//         
-//         Project {
-//             id,
-//             client,
-//             freelancer,
-//             total_budget,
-//             released_amount: 0,
-//             milestones,
-//             released_milestones: vec![false; milestone_count],
-//         }
-//     }
-//     
-//     fn remaining_balance(&self) -> u128 {
-//         self.total_budget - self.released_amount
-//     }
-//     
-//     fn release_milestone(&mut self, milestone_idx: usize) -> Result<u128, String> {
-//         if milestone_idx >= self.milestones.len() {
-//             return Err(String::from("Invalid milestone index"));
-//         }
-//         
-//         if self.released_milestones[milestone_idx] {
-//             return Err(String::from("Milestone already released"));
-//         }
-//         
-//         let amount = self.milestones[milestone_idx];
-//         self.released_amount += amount;
-//         self.released_milestones[milestone_idx] = true;
-//         
-//         Ok(amount)
-//     }
-//     
-//     fn is_complete(&self) -> bool {
-//         self.released_amount == self.total_budget
-//     }
-// }
+impl Project {
+    fn new(id: u64, client: String, freelancer: String, milestones: Vec<u128>) -> Project {
+        let total_budget: u128 = milestones.iter().sum();
+        let milestone_count = milestones.len();
+        
+        Project {
+            id,
+            client,
+            freelancer,
+            total_budget,
+            released_amount: 0,
+            milestones,
+            released_milestones: vec![false; milestone_count],
+        }
+    }
+    
+    fn remaining_balance(&self) -> u128 {
+        self.total_budget - self.released_amount
+    }
+    
+    fn release_milestone(&mut self, milestone_idx: usize) -> Result<u128, String> {
+        if milestone_idx >= self.milestones.len() {
+            return Err(String::from("Invalid milestone index"));
+        }
+        
+        if self.released_milestones[milestone_idx] {
+            return Err(String::from("Milestone already released"));
+        }
+        
+        let amount = self.milestones[milestone_idx];
+        self.released_amount += amount;
+        self.released_milestones[milestone_idx] = true;
+        
+        Ok(amount)
+    }
+    
+    fn is_complete(&self) -> bool {
+        self.released_amount == self.total_budget
+    }
+}
 //
 // KEY INSIGHT: impl blocks add behavior to structs.
 // - &self = read-only method

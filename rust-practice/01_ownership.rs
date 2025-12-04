@@ -36,7 +36,7 @@ fn exercise_1a() {
     
     // TODO: Fix this line so both println! statements work
     // Currently s1 is MOVED to s2, making s1 invalid
-    let s2 = s1;  // <-- Fix this line
+    let s2 = s1.clone();  // <-- Fix this line
     
     // These should both print
     // println!("s1 = {}", s1);  // Uncomment after fixing
@@ -70,7 +70,7 @@ fn exercise_1b() {
 // TODO: Fix this function signature and implementation
 fn calculate_fee(amount: &u128) -> u128 {
     // Return 5% of amount
-    0  // <-- Fix this
+    amount * 5 / 100;  // 5% fee
 }
 
 // ----------------------------------------------------------------------------
@@ -90,7 +90,7 @@ fn exercise_1c() {
     
     // TODO: Implement release_funds to modify escrow_balance
     release_funds(&mut escrow_balance, release_amount);
-    
+        escrow_balance = escrow_balance - release_amount;
     println!("After release: {}", escrow_balance);
     // Should print: After release: 4000
 }
@@ -99,6 +99,7 @@ fn exercise_1c() {
 fn release_funds(balance: &mut u128, amount: u128) {
     // Subtract amount from balance
     // <-- Add your code here
+    balance = balance - amount;
 }
 
 // ----------------------------------------------------------------------------
@@ -126,6 +127,25 @@ fn exercise_1d() {
     
     println!("(Implement Project struct to complete this exercise)");
 }
+struct Project {
+    client: String;
+    freelancer: String;
+    budget: u128;
+}
+impl Project {
+    fn get_client(&self) -> &str {
+        &self.client;
+    }
+}
+let project = Project {
+        client: String::from("GCLIENT123"),
+        freelancer: String::from("GFREELANCER456"),
+        budget: 10000,
+   };
+let client = project.get_client();
+
+println!("Client: {}", client);
+println!("Budget: {}", project.budget)
 
 // TODO: Define the Project struct
 // struct Project {
