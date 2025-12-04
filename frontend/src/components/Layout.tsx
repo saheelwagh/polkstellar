@@ -2,12 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Home, Briefcase, User, Wallet, Menu, X, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
-import {
-  isConnected,
-  getPublicKey,
-  isAllowed,
-  setAllowed,
-} from '@stellar/freighter-api';
+import freighterApi from '@stellar/freighter-api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -34,12 +29,12 @@ export function Layout({ children }: LayoutProps) {
 
   const checkWalletConnection = async () => {
     try {
-      const connected = await isConnected();
-      if (connected) {
-        const allowed = await isAllowed();
-        if (allowed) {
-          const publicKey = await getPublicKey();
-          setWalletAddress(publicKey);
+      const { isConnected } = await freighterApi.isConnected();
+      if (isConnected) {
+        const { isAllowed } = await freighterApi.isAllowed();
+        if (isAllowed) {
+          const { address } = await freighterApi.getAddress();
+          setWalletAddress(address);
           setIsWalletConnected(true);
         }
       }
@@ -54,9 +49,9 @@ export function Layout({ children }: LayoutProps) {
 
     try {
       // Check if Freighter is installed
-      const connected = await isConnected();
+      const { isConnected } = await freighterApi.isConnected();
       
-      if (!connected) {
+      if (!isConnected) {
         setError('Please install Freighter wallet extension');
         window.open('https://www.freighter.app/', '_blank');
         setIsConnecting(false);
@@ -64,13 +59,13 @@ export function Layout({ children }: LayoutProps) {
       }
 
       // Request permission
-      await setAllowed();
+      await freighterApi.setAllowed();
       
-      // Get public key
-      const publicKey = await getPublicKey();
+      // Get address
+      const { address } = await freighterApi.getAddress();
       
-      if (publicKey) {
-        setWalletAddress(publicKey);
+      if (address) {
+        setWalletAddress(address);
         setIsWalletConnected(true);
       }
     } catch (err: any) {

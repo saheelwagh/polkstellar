@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short,
+    contract, contractimpl, contracttype, contracterror, symbol_short,
     Address, Env, Map, Symbol, Vec, log,
 };
 
@@ -289,15 +289,16 @@ impl EscrowContract {
 // ERRORS
 // =============================================================================
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum Error {
-    ProjectNotFound,
-    InvalidMilestone,
-    AlreadyFunded,
-    NotFunded,
-    NotReleasable,
-    Unauthorized,
+    ProjectNotFound = 1,
+    InvalidMilestone = 2,
+    AlreadyFunded = 3,
+    NotFunded = 4,
+    NotReleasable = 5,
+    Unauthorized = 6,
 }
 
 // =============================================================================
@@ -327,7 +328,7 @@ mod test {
         assert_eq!(project_id, 1);
         assert_eq!(client.get_project_count(), 1);
 
-        let project = client.get_project(&project_id).unwrap();
+        let project = client.get_project(&project_id);
         assert_eq!(project.milestones.len(), 3);
         assert_eq!(project.total_funded, 0);
     }
@@ -348,22 +349,22 @@ mod test {
         let project_id = client.create_project(&client_addr, &freelancer_addr, &milestones);
         
         // Fund first milestone
-        let funded = client.fund_milestone(&project_id, &0).unwrap();
+        let funded = client.fund_milestone(&project_id, &0);
         assert_eq!(funded, 1000);
 
         // Check balance
-        let balance = client.get_balance(&project_id).unwrap();
+        let balance = client.get_balance(&project_id);
         assert_eq!(balance, 1000);
 
         // Freelancer submits
-        client.submit_milestone(&project_id, &0).unwrap();
+        client.submit_milestone(&project_id, &0);
 
         // Client releases
-        let released = client.release_milestone(&project_id, &0).unwrap();
+        let released = client.release_milestone(&project_id, &0);
         assert_eq!(released, 1000);
 
         // Balance should be 0
-        let balance = client.get_balance(&project_id).unwrap();
+        let balance = client.get_balance(&project_id);
         assert_eq!(balance, 0);
     }
 }

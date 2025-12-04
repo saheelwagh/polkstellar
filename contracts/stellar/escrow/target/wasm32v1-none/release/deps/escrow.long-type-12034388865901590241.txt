@@ -1,0 +1,12 @@
+for<'a> soroban_sdk::Error: From<&'a Error>
+From<(soroban_sdk::xdr::ScErrorType, soroban_sdk::xdr::ScErrorCode)>
+From<soroban_env_common::symbol::SymbolError>
+for<'a> Into<soroban_sdk::Error>
+TryFromVal<Env, core::result::Result<i128, Error>>
+FromVal<Env, core::result::Result<i128, Error>>
+core::result::Result<i128, Error>
+TryFromVal<Env, core::result::Result<(), Error>>
+FromVal<Env, core::result::Result<(), Error>>
+TryFromVal<Env, core::result::Result<Project, Error>>
+FromVal<Env, core::result::Result<Project, Error>>
+core::result::Result<Project, Error>
