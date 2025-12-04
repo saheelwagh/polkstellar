@@ -3,7 +3,7 @@
 use soroban_sdk::{
     contract, contractimpl, contracttype, contracterror, symbol_short,
     Address, Env, Map, Symbol, Vec, log,
-};
+}; //using all these packages from soroban_sdk
 
 // =============================================================================
 // DATA STRUCTURES
@@ -11,7 +11,7 @@ use soroban_sdk::{
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MilestoneStatus {
+pub enum MilestoneStatus { //milestone can ve any of these at given point in time
     Pending,
     Funded,
     Submitted,

@@ -11,7 +11,7 @@ stellar contract deploy \
   --source alice \
   --network futurenet
 Save the returned Contract ID - you'll need it for frontend integration.
-
+CCKCGYGFMTYRAHHNOVMBMGKAP6S4XSWL3TEJJH2D4JCZWBJRIZBUXZII
 Step 5: Test via CLI
 bash
 # Create a project
