@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "^14.4.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.555.0",
     "react": "^19.2.0",

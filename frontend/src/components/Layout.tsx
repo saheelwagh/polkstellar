@@ -1,14 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Briefcase, User, Wallet, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { Home, Briefcase, User, Wallet, Menu, X, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { cn } from '../lib/utils';
-
-// =============================================================================
-// BLOCKCHAIN CONNECTION POINT:
-// This component will need wallet connection status from:
-// - Stellar: @stellar/freighter-api for Freighter wallet
-// - Polkadot: @polkadot/extension-dapp for Polkadot.js wallet
-// =============================================================================
+import {
+  isConnected,
+  getPublicKey,
+  isAllowed,
+  setAllowed,
+} from '@stellar/freighter-api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,10 +16,10 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // TODO: Replace with actual wallet connection state
-  const isWalletConnected = false;
-  const walletAddress = '';
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -28,21 +27,63 @@ export function Layout({ children }: LayoutProps) {
     { path: '/freelancer', label: 'Freelancer', icon: User },
   ];
 
-  const handleConnectWallet = () => {
-    // =============================================================================
-    // BLOCKCHAIN CONNECTION POINT:
-    // Implement wallet connection here:
-    // 
-    // For Stellar (Freighter):
-    // import freighter from '@stellar/freighter-api';
-    // const publicKey = await freighter.getPublicKey();
-    //
-    // For Polkadot:
-    // import { web3Enable, web3Accounts } from '@polkadot/extension-dapp';
-    // await web3Enable('FreelanceEscrow');
-    // const accounts = await web3Accounts();
-    // =============================================================================
-    console.log('Connect wallet clicked - implement blockchain connection');
+  // Check if wallet is already connected on mount
+  useEffect(() => {
+    checkWalletConnection();
+  }, []);
+
+  const checkWalletConnection = async () => {
+    try {
+      const connected = await isConnected();
+      if (connected) {
+        const allowed = await isAllowed();
+        if (allowed) {
+          const publicKey = await getPublicKey();
+          setWalletAddress(publicKey);
+          setIsWalletConnected(true);
+        }
+      }
+    } catch (err) {
+      console.log('Wallet not connected');
+    }
+  };
+
+  const handleConnectWallet = async () => {
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      // Check if Freighter is installed
+      const connected = await isConnected();
+      
+      if (!connected) {
+        setError('Please install Freighter wallet extension');
+        window.open('https://www.freighter.app/', '_blank');
+        setIsConnecting(false);
+        return;
+      }
+
+      // Request permission
+      await setAllowed();
+      
+      // Get public key
+      const publicKey = await getPublicKey();
+      
+      if (publicKey) {
+        setWalletAddress(publicKey);
+        setIsWalletConnected(true);
+      }
+    } catch (err: any) {
+      console.error('Wallet connection error:', err);
+      setError(err.message || 'Failed to connect wallet');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setWalletAddress('');
+    setIsWalletConnected(false);
   };
 
   return (
@@ -86,20 +127,35 @@ export function Layout({ children }: LayoutProps) {
 
             {/* Wallet Connection */}
             <div className="flex items-center space-x-4">
-              <button
-                onClick={handleConnectWallet}
-                className={cn(
-                  'flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all',
-                  isWalletConnected
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                )}
-              >
-                <Wallet className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                  {isWalletConnected ? walletAddress.slice(0, 8) + '...' : 'Connect Wallet'}
-                </span>
-              </button>
+              {error && (
+                <span className="text-red-400 text-sm hidden md:inline">{error}</span>
+              )}
+              {isWalletConnected ? (
+                <button
+                  onClick={handleDisconnect}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span className="hidden sm:inline">
+                    {walletAddress.slice(0, 4)}...{walletAddress.slice(-4)}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnectWallet}
+                  disabled={isConnecting}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white transition-all disabled:opacity-50"
+                >
+                  {isConnecting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Wallet className="w-4 h-4" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {isConnecting ? 'Connecting...' : 'Connect Stellar Wallet'}
+                  </span>
+                </button>
+              )}
 
               {/* Mobile menu button */}
               <button
