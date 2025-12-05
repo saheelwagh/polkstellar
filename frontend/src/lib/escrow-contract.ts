@@ -13,6 +13,9 @@ import { Server, Api, assembleTransaction } from '@stellar/stellar-sdk/rpc';
 import { ESCROW_CONTRACT_ID, NETWORK_PASSPHRASE } from '../context/WalletContext';
 
 console.log('escrow-contract.ts loaded');
+console.log('Server:', typeof Server);
+console.log('Api:', typeof Api);
+console.log('Contract:', typeof Contract);
 
 const SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 
@@ -131,15 +134,15 @@ export async function fundMilestone(
   try {
     const rpcServer = getServer();
     const account = await rpcServer.getAccount(clientAddress);
-    const contract = new StellarSdk.Contract(ESCROW_CONTRACT_ID);
+    const contract = new Contract(ESCROW_CONTRACT_ID);
     
     const operation = contract.call(
       'fund_milestone',
-      StellarSdk.nativeToScVal(BigInt(projectId), { type: 'u64' }),
-      StellarSdk.nativeToScVal(milestoneIndex, { type: 'u32' })
+      nativeToScVal(BigInt(projectId), { type: 'u64' }),
+      nativeToScVal(milestoneIndex, { type: 'u32' })
     );
 
-    const transaction = new StellarSdk.TransactionBuilder(account, {
+    const transaction = new TransactionBuilder(account, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -149,16 +152,16 @@ export async function fundMilestone(
 
     const simulated = await rpcServer.simulateTransaction(transaction);
     
-    if (StellarSdk.SorobanRpc.Api.isSimulationError(simulated)) {
+    if (Api.isSimulationError(simulated)) {
       return { success: false, error: String(simulated.error) };
     }
 
-    const prepared = StellarSdk.SorobanRpc.assembleTransaction(transaction, simulated).build();
+    const prepared = assembleTransaction(transaction, simulated).build();
     const { signedTxXdr } = await freighterApi.signTransaction(prepared.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
     });
 
-    const tx = StellarSdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+    const tx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
     const result = await rpcServer.sendTransaction(tx);
 
     if (result.status === 'PENDING') {
@@ -170,7 +173,7 @@ export async function fundMilestone(
       
       if (getResult.status === 'SUCCESS') {
         const returnValue = getResult.returnValue;
-        const amount = returnValue ? Number(StellarSdk.scValToNative(returnValue)) : 0;
+        const amount = returnValue ? Number(scValToNative(returnValue)) : 0;
         return { success: true, amount };
       }
     }
@@ -193,15 +196,15 @@ export async function submitMilestone(
   try {
     const rpcServer = getServer();
     const account = await rpcServer.getAccount(freelancerAddress);
-    const contract = new StellarSdk.Contract(ESCROW_CONTRACT_ID);
+    const contract = new Contract(ESCROW_CONTRACT_ID);
     
     const operation = contract.call(
       'submit_milestone',
-      StellarSdk.nativeToScVal(BigInt(projectId), { type: 'u64' }),
-      StellarSdk.nativeToScVal(milestoneIndex, { type: 'u32' })
+      nativeToScVal(BigInt(projectId), { type: 'u64' }),
+      nativeToScVal(milestoneIndex, { type: 'u32' })
     );
 
-    const transaction = new StellarSdk.TransactionBuilder(account, {
+    const transaction = new TransactionBuilder(account, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -211,16 +214,16 @@ export async function submitMilestone(
 
     const simulated = await rpcServer.simulateTransaction(transaction);
     
-    if (StellarSdk.SorobanRpc.Api.isSimulationError(simulated)) {
+    if (Api.isSimulationError(simulated)) {
       return { success: false, error: String(simulated.error) };
     }
 
-    const prepared = StellarSdk.SorobanRpc.assembleTransaction(transaction, simulated).build();
+    const prepared = assembleTransaction(transaction, simulated).build();
     const { signedTxXdr } = await freighterApi.signTransaction(prepared.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
     });
 
-    const tx = StellarSdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+    const tx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
     const result = await rpcServer.sendTransaction(tx);
 
     if (result.status === 'PENDING') {
@@ -253,15 +256,15 @@ export async function releaseMilestone(
   try {
     const rpcServer = getServer();
     const account = await rpcServer.getAccount(clientAddress);
-    const contract = new StellarSdk.Contract(ESCROW_CONTRACT_ID);
+    const contract = new Contract(ESCROW_CONTRACT_ID);
     
     const operation = contract.call(
       'release_milestone',
-      StellarSdk.nativeToScVal(BigInt(projectId), { type: 'u64' }),
-      StellarSdk.nativeToScVal(milestoneIndex, { type: 'u32' })
+      nativeToScVal(BigInt(projectId), { type: 'u64' }),
+      nativeToScVal(milestoneIndex, { type: 'u32' })
     );
 
-    const transaction = new StellarSdk.TransactionBuilder(account, {
+    const transaction = new TransactionBuilder(account, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -271,16 +274,16 @@ export async function releaseMilestone(
 
     const simulated = await rpcServer.simulateTransaction(transaction);
     
-    if (StellarSdk.SorobanRpc.Api.isSimulationError(simulated)) {
+    if (Api.isSimulationError(simulated)) {
       return { success: false, error: String(simulated.error) };
     }
 
-    const prepared = StellarSdk.SorobanRpc.assembleTransaction(transaction, simulated).build();
+    const prepared = assembleTransaction(transaction, simulated).build();
     const { signedTxXdr } = await freighterApi.signTransaction(prepared.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
     });
 
-    const tx = StellarSdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+    const tx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
     const result = await rpcServer.sendTransaction(tx);
 
     if (result.status === 'PENDING') {
@@ -292,7 +295,7 @@ export async function releaseMilestone(
       
       if (getResult.status === 'SUCCESS') {
         const returnValue = getResult.returnValue;
-        const amount = returnValue ? Number(StellarSdk.scValToNative(returnValue)) : 0;
+        const amount = returnValue ? Number(scValToNative(returnValue)) : 0;
         return { success: true, amount };
       }
     }
@@ -310,20 +313,20 @@ export async function releaseMilestone(
 export async function getProject(projectId: number): Promise<any> {
   try {
     const rpcServer = getServer();
-    const contract = new StellarSdk.Contract(ESCROW_CONTRACT_ID);
+    const contract = new Contract(ESCROW_CONTRACT_ID);
     
     // For read-only calls, we can simulate without signing
-    const dummyAccount = new StellarSdk.Account(
+    const dummyAccount = new Account(
       'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       '0'
     );
     
     const operation = contract.call(
       'get_project',
-      StellarSdk.nativeToScVal(BigInt(projectId), { type: 'u64' })
+      nativeToScVal(BigInt(projectId), { type: 'u64' })
     );
 
-    const transaction = new StellarSdk.TransactionBuilder(dummyAccount, {
+    const transaction = new TransactionBuilder(dummyAccount, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -333,8 +336,8 @@ export async function getProject(projectId: number): Promise<any> {
 
     const simulated = await rpcServer.simulateTransaction(transaction);
     
-    if (StellarSdk.SorobanRpc.Api.isSimulationSuccess(simulated) && simulated.result) {
-      return StellarSdk.scValToNative(simulated.result.retval);
+    if (Api.isSimulationSuccess(simulated) && simulated.result) {
+      return scValToNative(simulated.result.retval);
     }
     
     return null;
@@ -350,16 +353,16 @@ export async function getProject(projectId: number): Promise<any> {
 export async function getProjectCount(): Promise<number> {
   try {
     const rpcServer = getServer();
-    const contract = new StellarSdk.Contract(ESCROW_CONTRACT_ID);
+    const contract = new Contract(ESCROW_CONTRACT_ID);
     
-    const dummyAccount = new StellarSdk.Account(
+    const dummyAccount = new Account(
       'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       '0'
     );
     
     const operation = contract.call('get_project_count');
 
-    const transaction = new StellarSdk.TransactionBuilder(dummyAccount, {
+    const transaction = new TransactionBuilder(dummyAccount, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -369,8 +372,8 @@ export async function getProjectCount(): Promise<number> {
 
     const simulated = await rpcServer.simulateTransaction(transaction);
     
-    if (StellarSdk.SorobanRpc.Api.isSimulationSuccess(simulated) && simulated.result) {
-      return Number(StellarSdk.scValToNative(simulated.result.retval));
+    if (Api.isSimulationSuccess(simulated) && simulated.result) {
+      return Number(scValToNative(simulated.result.retval));
     }
     
     return 0;
