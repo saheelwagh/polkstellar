@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Briefcase, User, Wallet, Menu, X, Loader2 } from 'lucide-react';
+import { Home, Briefcase, User, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
-import { useWallet } from '../context/WalletContext';
+import { StellarWallet } from './StellarWallet';
+import { PolkadotWallet } from './PolkadotWallet';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,9 +12,6 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // Use shared wallet context
-  const { isConnected, address, isConnecting, error, connect, disconnect } = useWallet();
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -60,37 +58,9 @@ export function Layout({ children }: LayoutProps) {
               })}
             </div>
 
-            {/* Wallet Connection */}
-            <div className="flex items-center space-x-4">
-              {error && (
-                <span className="text-red-400 text-sm hidden md:inline">{error}</span>
-              )}
-              {isConnected ? (
-                <button
-                  onClick={disconnect}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-all"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span className="hidden sm:inline">
-                    {address.slice(0, 4)}...{address.slice(-4)}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  onClick={connect}
-                  disabled={isConnecting}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white transition-all disabled:opacity-50"
-                >
-                  {isConnecting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Wallet className="w-4 h-4" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {isConnecting ? 'Connecting...' : 'Connect Stellar Wallet'}
-                  </span>
-                </button>
-              )}
+            {/* Wallet Connection - Stellar only in header */}
+            <div className="flex items-center gap-2 md:gap-4">
+              <StellarWallet />
 
               {/* Mobile menu button */}
               <button
@@ -132,6 +102,16 @@ export function Layout({ children }: LayoutProps) {
         )}
       </nav>
 
+      {/* Polkadot Wallet Section - Full Width Below Header */}
+      <div className="w-full bg-gradient-to-r from-purple-900/40 to-purple-800/40 border-b border-purple-500/50 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-purple-300 font-medium">Polkadot Wallet</p>
+            <PolkadotWallet />
+          </div>
+        </div>
+      </div>
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
@@ -150,7 +130,7 @@ export function Layout({ children }: LayoutProps) {
                 <span className="text-gray-400">Stellar</span>
               </span>
               <span className="flex items-center space-x-1">
-                <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                 <span className="text-gray-400">Polkadot</span>
               </span>
             </div>

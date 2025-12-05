@@ -3,6 +3,7 @@ import { Home, Briefcase, User, Wallet, Menu, X, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
 import { useWallet } from '../context/WalletContext';
+import { PolkadotWallet } from './PolkadotWallet';
 
 export function AppLayout() {
   const location = useLocation();
@@ -127,6 +128,16 @@ export function AppLayout() {
           </div>
         )}
       </nav>
+
+      {/* Polkadot Wallet Section - Full Width Below Header */}
+      <div className="w-full bg-gradient-to-r from-purple-900/40 to-purple-800/40 border-b border-purple-500/50 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-purple-300 font-medium">Polkadot Wallet</p>
+            <PolkadotWallet />
+          </div>
+        </div>
+      </div>
 
       {/* Error display */}
       {error && (
