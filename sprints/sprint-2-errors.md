@@ -118,6 +118,84 @@ console.log('Contract:', typeof Contract);
 
 ---
 
+---
+
+## Error 4: assembleTransaction Type Mismatch
+**Error:** `TypeError: expected a 'Transaction', got: [object Object]`
+
+**Cause:** The `assembleTransaction` function from `@stellar/stellar-sdk/rpc` expects a specific `Transaction` type, but there was a type mismatch between the main SDK's `TransactionBuilder.build()` output and what the RPC module expected.
+
+**Attempted solutions:**
+1. Using `server.prepareTransaction()` - same error (it uses `assembleTransaction` internally)
+2. Manual transaction rebuild with soroban data - worked!
+
+**Working solution:**
+```typescript
+// Instead of using assembleTransaction, manually rebuild:
+const successSim = simulated as Api.SimulateTransactionSuccessResponse;
+
+const preparedTx = new TransactionBuilder(account, {
+  fee: totalFee,
+  networkPassphrase: NETWORK_PASSPHRASE,
+})
+  .addOperation(opWithAuth)
+  .setSorobanData(successSim.transactionData.build())
+  .setTimeout(30)
+  .build();
+```
+
+---
+
+## Error 5: Transaction Failed On-Chain
+**Error:** `Transaction status: FAILED` with no clear error message
+
+**Cause:** The contract requires `client.require_auth()` but the authorization entries from simulation were not being included in the final transaction.
+
+**Solution:** Extract auth from simulation result and attach to operation:
+```typescript
+const auth = successSim.result?.auth || [];
+const opWithAuth = contract.call('create_project', ...args);
+if (auth.length > 0) {
+  (opWithAuth as any).auth = auth;
+}
+```
+
+---
+
+## Error 6: Bad Sequence Number (txBadSeq)
+**Error:** `{"result":{"_switch":{"name":"txBadSeq","value":-5}}}`
+
+**Cause:** The account sequence number becomes stale between:
+1. Initial account fetch
+2. Simulation
+3. Transaction rebuild
+4. Signing
+5. Submission
+
+By the time the transaction is submitted, the sequence number may have been used by another transaction or simply expired.
+
+**Solution:** Re-fetch the account right before building the final transaction:
+```typescript
+// After simulation, before building final tx:
+const freshAccount = await rpcServer.getAccount(clientAddress);
+const preparedTx = new TransactionBuilder(freshAccount, { ... });
+```
+
+---
+
+## Summary of Working Flow
+
+1. **Fetch account** - get initial sequence
+2. **Build transaction** - with contract operation
+3. **Simulate** - get soroban data and auth entries
+4. **Re-fetch account** - get fresh sequence number
+5. **Rebuild transaction** - with soroban data, auth, and updated fees
+6. **Sign with Freighter** - user approves
+7. **Submit** - send to network
+8. **Poll for result** - wait for confirmation
+
+---
+
 ## Related Files
 - `/frontend/src/lib/escrow-contract.ts` - Contract interaction functions
 - `/frontend/src/context/WalletContext.tsx` - Wallet state management
@@ -127,3 +205,68 @@ console.log('Contract:', typeof Contract);
 - **Contract ID:** `CCKCGYGFMTYRAHHNOVMBMGKAP6S4XSWL3TEJJH2D4JCZWBJRIZBUXZII`
 - **Network:** Stellar Testnet
 - **RPC URL:** `https://soroban-testnet.stellar.org`
+
+## Key Learnings
+
+1. **SDK v14 module structure** - RPC classes are in `@stellar/stellar-sdk/rpc`
+2. **Don't use assembleTransaction** - Manual rebuild is more reliable with Vite bundling
+3. **Always include auth** - Soroban contracts with `require_auth()` need auth entries
+4. **Fresh sequence numbers** - Re-fetch account before final transaction build
+5. **Detailed logging** - Essential for debugging blockchain transactions
+
+---
+
+## SOLUTION: Use Generated TypeScript Bindings
+
+After multiple attempts to manually build transactions, the **recommended approach** from Stellar docs is to use generated TypeScript bindings.
+
+### Generate Bindings
+```bash
+stellar contract bindings typescript \
+  --network testnet \
+  --contract-id CCKCGYGFMTYRAHHNOVMBMGKAP6S4XSWL3TEJJH2D4JCZWBJRIZBUXZII \
+  --output-dir packages/escrow
+
+cd packages/escrow
+npm install && npm run build
+```
+
+### Use the Generated Client
+```typescript
+import { Client, networks } from '../../packages/escrow/src';
+import freighterApi from '@stellar/freighter-api';
+
+const client = new Client({
+  ...networks.testnet,
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+});
+
+// Create project - much simpler!
+const tx = await client.create_project({
+  client: clientAddress,
+  freelancer: freelancerAddress,
+  milestone_amounts: [BigInt(500), BigInt(500)],
+});
+
+// Sign and send
+const result = await tx.signAndSend({
+  signTransaction: async (xdr: string) => {
+    const { signedTxXdr } = await freighterApi.signTransaction(xdr, {
+      networkPassphrase: networks.testnet.networkPassphrase,
+    });
+    return signedTxXdr;
+  },
+});
+
+console.log('Project ID:', result.result);
+```
+
+### Benefits of Generated Bindings
+1. **Type-safe** - Full TypeScript types for all contract functions
+2. **Handles complexity** - Auth, simulation, fees all handled automatically
+3. **Error handling** - Contract errors mapped to readable messages
+4. **Maintained** - Official Stellar tooling, kept up to date
+
+### Files Created
+- `/frontend/packages/escrow/` - Generated NPM package
+- `/frontend/src/lib/escrow-client.ts` - Wrapper using generated client

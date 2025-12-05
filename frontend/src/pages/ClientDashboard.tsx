@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Plus, 
   DollarSign, 
@@ -9,18 +9,36 @@ import {
   Wallet,
   FileText,
   Send,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { cn, formatUSDC } from '../lib/utils';
 import { mockProjects, mockClientStats, type Project, type Milestone } from '../lib/mock-data';
 import { useWallet } from '../context/WalletContext';
-import { createProject, fundMilestone, releaseMilestone } from '../lib/escrow-contract';
+import { createProject, fundMilestone, releaseMilestone, getProject, getProjectCount } from '../lib/escrow-client';
+
+// Type for on-chain project data
+interface OnChainProject {
+  id: number;
+  client: string;
+  freelancer: string;
+  milestones: Array<{
+    amount: bigint;
+    status: { tag: string };
+  }>;
+  total_funded: bigint;
+  total_released: bigint;
+}
 
 export function ClientDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<string | null>(null);
+  
+  // On-chain projects
+  const [onChainProjects, setOnChainProjects] = useState<OnChainProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
   
   // Form state
   const [projectTitle, setProjectTitle] = useState('');
@@ -30,6 +48,36 @@ export function ClientDashboard() {
 
   // Use shared wallet context
   const { isConnected, address } = useWallet();
+
+  // Load on-chain projects
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const count = await getProjectCount();
+      console.log('Project count:', count);
+      
+      const projects: OnChainProject[] = [];
+      for (let i = 1; i <= count; i++) {
+        const project = await getProject(i);
+        if (project) {
+          projects.push({ ...project, id: i });
+        }
+      }
+      setOnChainProjects(projects);
+      console.log('Loaded projects:', projects);
+    } catch (err) {
+      console.error('Error loading projects:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  // Load projects on mount and when wallet connects
+  useEffect(() => {
+    if (isConnected) {
+      loadProjects();
+    }
+  }, [isConnected]);
 
   const getStatusColor = (status: Project['status']) => {
     switch (status) {
@@ -66,15 +114,18 @@ export function ClientDashboard() {
 
     try {
       // For demo: split budget into 2 milestones (50% each)
-      const budget = parseInt(totalBudget);
-      const milestoneAmounts = [Math.floor(budget / 2), budget - Math.floor(budget / 2)];
+      const budget = BigInt(totalBudget);
+      const half = budget / 2n;
+      const milestoneAmounts = [half, budget - half];
       
-      console.log('Calling createProject with:', { address, freelancerAddress, milestoneAmounts });
+      console.log('Calling createProject with:', { address, freelancerAddress, milestoneAmounts: milestoneAmounts.map(String) });
       const result = await createProject(address, freelancerAddress, milestoneAmounts);
       console.log('createProject result:', result);
       
       if (result.success) {
         setTxStatus(`✅ Project created! ID: ${result.projectId}`);
+        // Reload projects to show the new one
+        loadProjects();
         setTimeout(() => {
           setShowCreateModal(false);
           setTxStatus(null);
@@ -208,15 +259,116 @@ export function ClientDashboard() {
         ))}
       </div>
 
-      {/* Projects List */}
+      {/* On-Chain Projects */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-white">Your Projects</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">On-Chain Projects</h2>
+          <button
+            onClick={loadProjects}
+            disabled={loadingProjects}
+            className="flex items-center space-x-2 px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
+          >
+            <RefreshCw className={cn('w-4 h-4', loadingProjects && 'animate-spin')} />
+            <span>Refresh</span>
+          </button>
+        </div>
+        
+        {loadingProjects && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <Loader2 className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-400">Loading projects from blockchain...</p>
+          </div>
+        )}
+        
+        {!loadingProjects && isConnected && onChainProjects.length === 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <FileText className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-400 mb-2">No on-chain projects yet</p>
+            <p className="text-gray-500 text-sm">Create your first project to get started</p>
+          </div>
+        )}
+        
+        {!loadingProjects && onChainProjects.map((project) => (
+          <div
+            key={project.id}
+            className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-blue-500/50 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <span className="text-blue-400 font-bold">#{project.id}</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Project #{project.id}</h3>
+                  <p className="text-gray-400 text-xs font-mono">
+                    Client: {project.client?.slice(0, 8)}...{project.client?.slice(-4)}
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                On-Chain
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-gray-500">Freelancer:</span>
+                <p className="text-gray-300 font-mono text-xs">
+                  {project.freelancer?.slice(0, 8)}...{project.freelancer?.slice(-4)}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Milestones:</span>
+                <p className="text-gray-300">{project.milestones?.length || 0}</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Total Funded:</span>
+                <p className="text-gray-300">{String(project.total_funded || 0)} stroops</p>
+              </div>
+              <div>
+                <span className="text-gray-500">Total Released:</span>
+                <p className="text-gray-300">{String(project.total_released || 0)} stroops</p>
+              </div>
+            </div>
+            
+            {project.milestones && project.milestones.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-800">
+                <p className="text-gray-500 text-sm mb-2">Milestones:</p>
+                <div className="space-y-2">
+                  {project.milestones.map((m, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
+                      <span className="text-gray-300 text-sm">Milestone {idx + 1}</span>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
+                        <span className={cn(
+                          'px-2 py-0.5 rounded text-xs',
+                          m.status?.tag === 'Pending' && 'bg-gray-500/20 text-gray-400',
+                          m.status?.tag === 'Funded' && 'bg-blue-500/20 text-blue-400',
+                          m.status?.tag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
+                          m.status?.tag === 'Approved' && 'bg-green-500/20 text-green-400',
+                          m.status?.tag === 'Released' && 'bg-purple-500/20 text-purple-400',
+                        )}>
+                          {m.status?.tag || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Mock Projects List (for reference) */}
+      <div className="space-y-4 opacity-50">
+        <h2 className="text-xl font-semibold text-white">Demo Projects (Mock Data)</h2>
         
         {isConnected && mockProjects.length === 0 && (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
             <FileText className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400 mb-2">No projects yet</p>
-            <p className="text-gray-500 text-sm">Create your first project to get started</p>
+            <p className="text-gray-400 mb-2">No demo projects</p>
+            <p className="text-gray-500 text-sm">Mock data section</p>
           </div>
         )}
         

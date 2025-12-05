@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   DollarSign, 
   Clock, 
@@ -8,35 +8,83 @@ import {
   Upload,
   ExternalLink,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { cn, formatUSDC } from '../lib/utils';
 import { mockProjects, mockFreelancerStats, type Project, type Milestone } from '../lib/mock-data';
+import { useWallet } from '../context/WalletContext';
+import { getProject, getProjectCount, submitMilestone as submitMilestoneToChain } from '../lib/escrow-client';
 
 // =============================================================================
 // BLOCKCHAIN CONNECTION POINTS:
 // 
-// STELLAR (Soroban) - Read operations:
+// STELLAR (Soroban) - All operations:
 // - getProjectsForFreelancer(): Query escrow contract for assigned projects
 // - getEarnings(): Calculate total released funds
-// - getPendingAmount(): Sum of approved but unreleased milestones
+// - submitMilestone(): Mark milestone as submitted (work done)
 //
-// POLKADOT (Ink!) - Write operations:
-// - submitDeliverable(): Store deliverable hash (IPFS/Arweave link)
-// - getDeliverables(): Fetch submitted work proofs
-//
-// Wallet connections needed:
-// - Freighter (Stellar): For viewing balances and receiving funds
-// - Polkadot.js (Polkadot): For signing deliverable submissions
+// Wallet: Freighter (Stellar) - same wallet for both client and freelancer
 // =============================================================================
+
+// Type for on-chain project data
+interface OnChainProject {
+  id: number;
+  client: string;
+  freelancer: string;
+  milestones: Array<{
+    amount: bigint;
+    status: { tag: string };
+  }>;
+  total_funded: bigint;
+  total_released: bigint;
+}
 
 export function FreelancerDashboard() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [submitMilestone, setSubmitMilestone] = useState<{ projectId: string; milestone: Milestone } | null>(null);
+  const [selectedMilestone, setSelectedMilestone] = useState<{ projectId: number; milestoneIndex: number } | null>(null);
+  
+  // On-chain projects
+  const [onChainProjects, setOnChainProjects] = useState<OnChainProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [txStatus, setTxStatus] = useState<string | null>(null);
 
-  // TODO: Replace with actual wallet connection state
-  const isWalletConnected = false;
+  // Use shared wallet context
+  const { isConnected, address } = useWallet();
+
+  // Load on-chain projects
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const count = await getProjectCount();
+      console.log('Freelancer - Project count:', count);
+      
+      const projects: OnChainProject[] = [];
+      for (let i = 1; i <= count; i++) {
+        const project = await getProject(i);
+        if (project) {
+          // Filter to show only projects where current user is freelancer
+          // For now, show all projects (demo mode)
+          projects.push({ ...project, id: i });
+        }
+      }
+      setOnChainProjects(projects);
+      console.log('Freelancer - Loaded projects:', projects);
+    } catch (err) {
+      console.error('Error loading projects:', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  // Load projects on mount and when wallet connects
+  useEffect(() => {
+    if (isConnected) {
+      loadProjects();
+    }
+  }, [isConnected]);
 
   const getMilestoneStatusColor = (status: Milestone['status']) => {
     switch (status) {
@@ -47,22 +95,27 @@ export function FreelancerDashboard() {
     }
   };
 
-  const handleSubmitDeliverable = (projectId: string, milestoneId: number, deliverableHash: string) => {
-    // =============================================================================
-    // BLOCKCHAIN CONNECTION POINT - SUBMIT DELIVERABLE:
-    //
-    // Step 1: Upload file to IPFS/Arweave and get hash
-    // const hash = await uploadToIPFS(file);
-    //
-    // Step 2: Submit hash to Polkadot contract
-    // await polkadotContract.submitDeliverable(projectId, milestoneId, hash);
-    //
-    // This creates an immutable record of work submission
-    // Client will see this and can approve/dispute
-    // =============================================================================
-    console.log(`Submit deliverable for milestone ${milestoneId}: ${deliverableHash}`);
-    setShowSubmitModal(false);
-    setSubmitMilestone(null);
+  // Handle submitting a milestone on-chain
+  const handleSubmitMilestoneOnChain = async (projectId: number, milestoneIndex: number) => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setTxStatus('Submitting milestone...');
+    try {
+      const result = await submitMilestoneToChain(address, projectId, milestoneIndex);
+      
+      if (result.success) {
+        setTxStatus('✅ Milestone submitted successfully!');
+        loadProjects(); // Reload to see updated status
+        setTimeout(() => setTxStatus(null), 3000);
+      } else {
+        setTxStatus(`❌ Error: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTxStatus(`❌ Error: ${err.message}`);
+    }
   };
 
   const handleWithdraw = () => {
@@ -104,15 +157,27 @@ export function FreelancerDashboard() {
       </div>
 
       {/* Wallet Warning */}
-      {!isWalletConnected && (
+      {!isConnected && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start space-x-3">
           <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-yellow-400 font-medium">Wallet not connected</p>
             <p className="text-yellow-400/70 text-sm">
-              Connect your wallets to submit deliverables and receive payments.
+              Connect your Freighter wallet to submit work and receive payments.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Transaction Status */}
+      {txStatus && (
+        <div className={cn(
+          "p-4 rounded-lg",
+          txStatus.startsWith('✅') ? "bg-green-500/10 border border-green-500/30" :
+          txStatus.startsWith('❌') ? "bg-red-500/10 border border-red-500/30" :
+          "bg-blue-500/10 border border-blue-500/30"
+        )}>
+          <p className="text-white">{txStatus}</p>
         </div>
       )}
 
@@ -147,9 +212,97 @@ export function FreelancerDashboard() {
         </div>
       </div>
 
-      {/* Active Projects */}
+      {/* On-Chain Projects */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-white">Your Projects</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">On-Chain Projects</h2>
+          <button
+            onClick={loadProjects}
+            disabled={loadingProjects}
+            className="flex items-center space-x-2 px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
+          >
+            <RefreshCw className={cn('w-4 h-4', loadingProjects && 'animate-spin')} />
+            <span>Refresh</span>
+          </button>
+        </div>
+        
+        {loadingProjects && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <Loader2 className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-400">Loading projects from blockchain...</p>
+          </div>
+        )}
+        
+        {!loadingProjects && isConnected && onChainProjects.length === 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <p className="text-gray-400">No on-chain projects yet.</p>
+            <p className="text-gray-500 text-sm mt-1">Projects assigned to you will appear here.</p>
+          </div>
+        )}
+        
+        {!loadingProjects && onChainProjects.map((project) => (
+          <div
+            key={project.id}
+            className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-blue-500/50 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                  <span className="text-green-400 font-bold">#{project.id}</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Project #{project.id}</h3>
+                  <p className="text-gray-400 text-xs font-mono">
+                    Client: {project.client?.slice(0, 8)}...{project.client?.slice(-4)}
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                On-Chain
+              </span>
+            </div>
+            
+            {project.milestones && project.milestones.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-800">
+                <p className="text-gray-500 text-sm mb-2">Milestones:</p>
+                <div className="space-y-2">
+                  {project.milestones.map((m, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
+                      <span className="text-gray-300 text-sm">Milestone {idx + 1}</span>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
+                        <span className={cn(
+                          'px-2 py-0.5 rounded text-xs',
+                          m.status?.tag === 'Pending' && 'bg-gray-500/20 text-gray-400',
+                          m.status?.tag === 'Funded' && 'bg-blue-500/20 text-blue-400',
+                          m.status?.tag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
+                          m.status?.tag === 'Approved' && 'bg-green-500/20 text-green-400',
+                          m.status?.tag === 'Released' && 'bg-purple-500/20 text-purple-400',
+                        )}>
+                          {m.status?.tag || 'Unknown'}
+                        </span>
+                        {/* Submit button for funded milestones */}
+                        {m.status?.tag === 'Funded' && (
+                          <button
+                            onClick={() => handleSubmitMilestoneOnChain(project.id, idx)}
+                            className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors"
+                          >
+                            Submit Work
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Mock Projects (Demo) */}
+      <div className="space-y-4 opacity-50">
+        <h2 className="text-xl font-semibold text-white">Demo Projects (Mock Data)</h2>
         
         {freelancerProjects.length === 0 ? (
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">

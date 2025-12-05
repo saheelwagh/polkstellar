@@ -87,20 +87,44 @@ export async function createProject(
     console.log('Preparing transaction...');
     const successSim = simulated as Api.SimulateTransactionSuccessResponse;
     
-    // Rebuild transaction with soroban data and auth
-    const txBuilder = TransactionBuilder.cloneFrom(builtTx, {
-      fee: successSim.minResourceFee ? (parseInt(builtTx.fee) + parseInt(successSim.minResourceFee)).toString() : builtTx.fee,
-      sorobanData: successSim.transactionData.build(),
-    });
+    // Calculate new fee
+    const baseFee = parseInt(builtTx.fee);
+    const resourceFee = successSim.minResourceFee ? parseInt(successSim.minResourceFee) : 0;
+    const totalFee = (baseFee + resourceFee).toString();
+    console.log('Fees - base:', baseFee, 'resource:', resourceFee, 'total:', totalFee);
     
-    // Add auth if present
-    if (successSim.result?.auth) {
-      const op = builtTx.operations[0] as any;
-      op.auth = successSim.result.auth;
+    // Get auth from simulation result
+    const auth = successSim.result?.auth || [];
+    console.log('Auth entries:', auth.length);
+    
+    // Rebuild the operation with auth
+    const opWithAuth = contract.call(
+      'create_project',
+      Address.fromString(clientAddress).toScVal(),
+      Address.fromString(freelancerAddress).toScVal(),
+      xdr.ScVal.scvVec(milestonesVec)
+    );
+    
+    // Set auth on the operation if we have it
+    if (auth.length > 0) {
+      (opWithAuth as any).auth = auth;
     }
     
-    const preparedTx = txBuilder.build();
-    console.log('Prepared transaction');
+    // Re-fetch account to get fresh sequence number
+    const freshAccount = await rpcServer.getAccount(clientAddress);
+    console.log('Fresh account sequence:', freshAccount.sequenceNumber());
+    
+    // Build new transaction with soroban data
+    const preparedTx = new TransactionBuilder(freshAccount, {
+      fee: totalFee,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(opWithAuth)
+      .setSorobanData(successSim.transactionData.build())
+      .setTimeout(30)
+      .build();
+    
+    console.log('Prepared transaction with auth');
 
     // Sign with Freighter
     console.log('Requesting Freighter signature...');
@@ -137,8 +161,24 @@ export async function createProject(
       } else if (getResult.status === 'FAILED') {
         // Try to get error details
         const resultXdr = (getResult as any).resultXdr;
-        console.error('Transaction failed. Result XDR:', resultXdr);
-        return { success: false, error: `Transaction failed: ${resultXdr || 'Unknown reason'}` };
+        const resultMetaXdr = (getResult as any).resultMetaXdr;
+        console.error('Transaction FAILED');
+        console.error('Result XDR:', resultXdr);
+        console.error('Result Meta XDR:', resultMetaXdr);
+        
+        // Try to extract error code
+        let errorMsg = 'Transaction failed on-chain';
+        try {
+          if (resultXdr && resultXdr.result) {
+            const result = resultXdr.result();
+            console.error('Decoded result:', result);
+            errorMsg = `Failed: ${JSON.stringify(result)}`;
+          }
+        } catch (e) {
+          console.error('Could not decode result:', e);
+        }
+        
+        return { success: false, error: errorMsg };
       } else {
         return { success: false, error: `Transaction status: ${getResult.status}` };
       }
