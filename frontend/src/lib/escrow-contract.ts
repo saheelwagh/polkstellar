@@ -61,7 +61,7 @@ export async function createProject(
     );
 
     // Build the transaction
-    const transaction = new TransactionBuilder(account, {
+    const builtTx = new TransactionBuilder(account, {
       fee: '100000',
       networkPassphrase: NETWORK_PASSPHRASE,
     })
@@ -69,9 +69,13 @@ export async function createProject(
       .setTimeout(30)
       .build();
 
+    // Convert to XDR and back to ensure correct type
+    const txXdr = builtTx.toXDR();
+    console.log('Transaction XDR created');
+
     // Simulate first
     console.log('Simulating transaction...');
-    const simulated = await rpcServer.simulateTransaction(transaction);
+    const simulated = await rpcServer.simulateTransaction(builtTx);
     console.log('Simulation result:', simulated);
     
     if (Api.isSimulationError(simulated)) {
@@ -79,40 +83,71 @@ export async function createProject(
       return { success: false, error: `Simulation failed: ${JSON.stringify(simulated.error)}` };
     }
 
-    // Prepare the transaction
+    // Manually add soroban data to transaction
     console.log('Preparing transaction...');
-    const prepared = assembleTransaction(transaction, simulated).build();
+    const successSim = simulated as Api.SimulateTransactionSuccessResponse;
+    
+    // Rebuild transaction with soroban data and auth
+    const txBuilder = TransactionBuilder.cloneFrom(builtTx, {
+      fee: successSim.minResourceFee ? (parseInt(builtTx.fee) + parseInt(successSim.minResourceFee)).toString() : builtTx.fee,
+      sorobanData: successSim.transactionData.build(),
+    });
+    
+    // Add auth if present
+    if (successSim.result?.auth) {
+      const op = builtTx.operations[0] as any;
+      op.auth = successSim.result.auth;
+    }
+    
+    const preparedTx = txBuilder.build();
+    console.log('Prepared transaction');
 
     // Sign with Freighter
     console.log('Requesting Freighter signature...');
-    const { signedTxXdr } = await freighterApi.signTransaction(prepared.toXDR(), {
+    const { signedTxXdr } = await freighterApi.signTransaction(preparedTx.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
     });
     console.log('Transaction signed');
 
     // Submit
     const tx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+    console.log('Submitting transaction...');
     const result = await rpcServer.sendTransaction(tx);
+    console.log('Send result:', result);
 
     // Wait for confirmation
     if (result.status === 'PENDING') {
+      console.log('Transaction pending, waiting for confirmation...');
       let getResult = await rpcServer.getTransaction(result.hash);
-      while (getResult.status === 'NOT_FOUND') {
+      let attempts = 0;
+      while (getResult.status === 'NOT_FOUND' && attempts < 30) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         getResult = await rpcServer.getTransaction(result.hash);
+        attempts++;
+        console.log(`Attempt ${attempts}: ${getResult.status}`);
       }
+      
+      console.log('Final transaction result:', getResult);
       
       if (getResult.status === 'SUCCESS') {
         // Extract project ID from result
         const returnValue = getResult.returnValue;
         const projectId = returnValue ? Number(scValToNative(returnValue)) : 1;
         return { success: true, projectId };
+      } else if (getResult.status === 'FAILED') {
+        // Try to get error details
+        const resultXdr = (getResult as any).resultXdr;
+        console.error('Transaction failed. Result XDR:', resultXdr);
+        return { success: false, error: `Transaction failed: ${resultXdr || 'Unknown reason'}` };
       } else {
-        return { success: false, error: 'Transaction failed' };
+        return { success: false, error: `Transaction status: ${getResult.status}` };
       }
+    } else if (result.status === 'ERROR') {
+      console.error('Send error:', result);
+      return { success: false, error: `Send error: ${(result as any).errorResult || result.status}` };
     }
 
-    return { success: false, error: 'Transaction not submitted' };
+    return { success: false, error: `Unexpected status: ${result.status}` };
   } catch (err: any) {
     console.error('Create project error:', err);
     // Better error extraction
