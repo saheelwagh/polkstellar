@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, 
   DollarSign, 
@@ -10,12 +10,32 @@ import {
   FileText,
   Send,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Search,
+  Filter,
+  ExternalLink,
+  Copy,
+  History,
+  X
 } from 'lucide-react';
-import { cn, formatUSDC } from '../lib/utils';
-import { mockProjects, mockClientStats, type Project, type Milestone } from '../lib/mock-data';
+import { cn, formatUSDC, truncateAddress, formatStroops } from '../lib/utils';
+import { mockProjects, type Project, type Milestone } from '../lib/mock-data';
 import { useWallet } from '../context/WalletContext';
 import { createProject, fundMilestone, releaseMilestone, getProject, getProjectCount } from '../lib/escrow-client';
+import { 
+  saveProjectMetadata, 
+  getAllProjectMetadata,
+  type ProjectMetadata 
+} from '../lib/project-metadata';
+import {
+  addTransaction,
+  getRecentTransactions,
+  getStellarExplorerUrl,
+  getTransactionTypeName,
+  getTransactionTypeIcon,
+  formatTransactionTime,
+  type Transaction
+} from '../lib/transaction-history';
 
 // Type for on-chain project data
 interface OnChainProject {
@@ -75,6 +95,9 @@ function getTotalBudget(milestones: Array<{amount: bigint | number}>): number {
   return milestones.reduce((sum, m) => sum + Number(m.amount || 0), 0);
 }
 
+// Project status type for filtering
+type ProjectStatus = 'all' | 'pending' | 'active' | 'completed';
+
 export function ClientDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -84,6 +107,17 @@ export function ClientDashboard() {
   // On-chain projects
   const [onChainProjects, setOnChainProjects] = useState<OnChainProject[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus>('all');
+  const [showTxHistory, setShowTxHistory] = useState(false);
+  
+  // Transaction history from localStorage
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // Project metadata from localStorage
+  const [projectMetadata, setProjectMetadata] = useState<Record<number, ProjectMetadata>>({});
   
   // Form state
   const [projectTitle, setProjectTitle] = useState('');
@@ -117,12 +151,88 @@ export function ClientDashboard() {
     }
   };
 
+  // Calculate stats from on-chain projects
+  const stats = {
+    totalProjects: onChainProjects.length,
+    totalBudget: onChainProjects.reduce((sum, p) => sum + Number(getTotalBudget(p.milestones)), 0),
+    totalFunded: onChainProjects.reduce((sum, p) => sum + Number(p.total_funded || 0), 0),
+    totalReleased: onChainProjects.reduce((sum, p) => sum + Number(p.total_released || 0), 0),
+    inEscrow: onChainProjects.reduce((sum, p) => sum + (Number(p.total_funded || 0) - Number(p.total_released || 0)), 0),
+    activeProjects: onChainProjects.filter(p => {
+      const allReleased = p.milestones?.every(m => getStatusTag(m.status) === 'Released');
+      return !allReleased;
+    }).length,
+  };
+
   // Load projects on mount and when wallet connects
   useEffect(() => {
     if (isConnected) {
       loadProjects();
     }
   }, [isConnected]);
+
+  // Load project metadata and transaction history from localStorage
+  useEffect(() => {
+    setProjectMetadata(getAllProjectMetadata());
+    setTransactions(getRecentTransactions(20));
+  }, []);
+
+  // Refresh transaction history after any transaction
+  const refreshTransactionHistory = () => {
+    setTransactions(getRecentTransactions(20));
+  };
+
+  // Get project status for filtering
+  const getProjectStatus = (project: OnChainProject): ProjectStatus => {
+    if (!project.milestones || project.milestones.length === 0) return 'pending';
+    const allReleased = project.milestones.every(m => getStatusTag(m.status) === 'Released');
+    if (allReleased) return 'completed';
+    const anyFunded = project.milestones.some(m => 
+      ['Funded', 'Submitted', 'Approved'].includes(getStatusTag(m.status))
+    );
+    return anyFunded ? 'active' : 'pending';
+  };
+
+  // Filter and search projects
+  const filteredProjects = useMemo(() => {
+    const filtered = onChainProjects.filter(project => {
+      // Status filter
+      if (statusFilter !== 'all' && getProjectStatus(project) !== statusFilter) {
+        return false;
+      }
+      
+      // Search filter (by title, freelancer address, or project ID)
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const metadata = projectMetadata[project.id];
+        const title = metadata?.title?.toLowerCase() || '';
+        const description = metadata?.description?.toLowerCase() || '';
+        const freelancer = project.freelancer?.toLowerCase() || '';
+        const idMatch = project.id.toString().includes(query);
+        
+        if (!title.includes(query) && !description.includes(query) && 
+            !freelancer.includes(query) && !idMatch) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    // Sort in reverse order (newest first)
+    return filtered.sort((a, b) => b.id - a.id);
+  }, [onChainProjects, statusFilter, searchQuery, projectMetadata]);
+
+  // Copy address to clipboard
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setTxStatus('📋 Copied to clipboard!');
+      setTimeout(() => setTxStatus(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   const getStatusColor = (status: Project['status']) => {
     switch (status) {
@@ -167,7 +277,31 @@ export function ClientDashboard() {
       const result = await createProject(address, freelancerAddress, milestoneAmounts);
       console.log('createProject result:', result);
       
-      if (result.success) {
+      if (result.success && result.projectId) {
+        // Save project metadata to localStorage
+        saveProjectMetadata({
+          projectId: result.projectId,
+          title: projectTitle || `Project #${result.projectId}`,
+          description: description || '',
+          createdAt: new Date().toISOString(),
+          clientAddress: address,
+          freelancerAddress: freelancerAddress,
+        });
+        
+        // Add to transaction history
+        addTransaction({
+          hash: result.txHash || '',
+          type: 'create_project',
+          status: 'success',
+          projectId: result.projectId,
+          fromAddress: address,
+          toAddress: freelancerAddress,
+        });
+        
+        // Refresh metadata and history
+        setProjectMetadata(getAllProjectMetadata());
+        refreshTransactionHistory();
+        
         setTxStatus(`✅ Project created! ID: ${result.projectId}`);
         // Reload projects to show the new one
         loadProjects();
@@ -233,6 +367,20 @@ export function ClientDashboard() {
       const result = await releaseMilestone(address, projectId, milestoneIndex);
       
       if (result.success) {
+        // Add to transaction history
+        const project = onChainProjects.find(p => p.id === projectId);
+        addTransaction({
+          hash: result.txHash || '',
+          type: 'release_milestone',
+          status: 'success',
+          projectId,
+          milestoneIndex,
+          amount: result.amount,
+          fromAddress: address,
+          toAddress: project?.freelancer,
+        });
+        refreshTransactionHistory();
+        
         setTxStatus(`✅ Released ${result.amount} stroops to freelancer!`);
         loadProjects(); // Reload to see updated status
         setTimeout(() => setTxStatus(null), 3000);
@@ -259,6 +407,18 @@ export function ClientDashboard() {
       const result = await fundMilestone(address, projectId, milestoneIndex);
       
       if (result.success) {
+        // Add to transaction history
+        addTransaction({
+          hash: result.txHash || '',
+          type: 'fund_milestone',
+          status: 'success',
+          projectId,
+          milestoneIndex,
+          amount: result.amount,
+          fromAddress: address,
+        });
+        refreshTransactionHistory();
+        
         setTxStatus(`✅ Funded ${result.amount} stroops!`);
         loadProjects(); // Reload to see updated status
         setTimeout(() => setTxStatus(null), 3000);
@@ -318,10 +478,10 @@ export function ClientDashboard() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Spent', value: isConnected ? '0 XLM' : '--', icon: DollarSign, color: 'text-green-500' },
-          { label: 'In Escrow', value: isConnected ? '0 XLM' : '--', icon: Wallet, color: 'text-blue-500' },
-          { label: 'Active Projects', value: isConnected ? '0' : '--', icon: Clock, color: 'text-yellow-500' },
-          { label: 'Completed', value: isConnected ? '0' : '--', icon: CheckCircle2, color: 'text-gray-400' },
+          { label: 'Total Budget', value: isConnected ? `${stats.totalBudget} stroops` : '--', icon: DollarSign, color: 'text-green-500' },
+          { label: 'In Escrow', value: isConnected ? `${stats.inEscrow} stroops` : '--', icon: Wallet, color: 'text-blue-500' },
+          { label: 'Active Projects', value: isConnected ? String(stats.activeProjects) : '--', icon: Clock, color: 'text-yellow-500' },
+          { label: 'Total Released', value: isConnected ? `${stats.totalReleased} stroops` : '--', icon: CheckCircle2, color: 'text-gray-400' },
         ].map((stat) => (
           <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center space-x-2 mb-2">
@@ -333,10 +493,132 @@ export function ClientDashboard() {
         ))}
       </div>
 
+      {/* Search, Filter & Transaction History */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Search */}
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by title, description, or address..."
+            className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+        
+        {/* Status Filter */}
+        <div className="flex items-center space-x-2">
+          <Filter className="w-4 h-4 text-gray-500" />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as ProjectStatus)}
+            className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="all">All Projects</option>
+            <option value="pending">Pending</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        
+        {/* Transaction History Toggle */}
+        <button
+          onClick={() => setShowTxHistory(!showTxHistory)}
+          className={cn(
+            "flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors",
+            showTxHistory 
+              ? "bg-blue-600 text-white" 
+              : "bg-gray-900 border border-gray-800 text-gray-300 hover:border-gray-700"
+          )}
+        >
+          <History className="w-4 h-4" />
+          <span>History</span>
+          {transactions.length > 0 && (
+            <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+              {transactions.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Transaction History Panel */}
+      {showTxHistory && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">Transaction History</h3>
+            <button
+              onClick={() => setShowTxHistory(false)}
+              className="text-gray-500 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {transactions.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">No transactions yet</p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {transactions.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg"
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="text-xl">{getTransactionTypeIcon(tx.type)}</span>
+                    <div>
+                      <p className="text-white font-medium">
+                        {getTransactionTypeName(tx.type)}
+                        {tx.projectId && <span className="text-gray-400"> #{tx.projectId}</span>}
+                        {tx.milestoneIndex !== undefined && (
+                          <span className="text-gray-500"> (M{tx.milestoneIndex + 1})</span>
+                        )}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {formatTransactionTime(tx.timestamp)}
+                        {tx.amount && ` • ${formatStroops(tx.amount)}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-xs font-medium",
+                      tx.status === 'success' && "bg-green-500/20 text-green-400",
+                      tx.status === 'pending' && "bg-yellow-500/20 text-yellow-400",
+                      tx.status === 'error' && "bg-red-500/20 text-red-400"
+                    )}>
+                      {tx.status}
+                    </span>
+                    {tx.hash && (
+                      <a
+                        href={getStellarExplorerUrl(tx.hash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300"
+                        title="View on Stellar Explorer"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* On-Chain Projects */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">On-Chain Projects</h2>
+          <h2 className="text-xl font-semibold text-white">
+            On-Chain Projects
+            {searchQuery || statusFilter !== 'all' ? (
+              <span className="text-gray-500 text-sm font-normal ml-2">
+                ({filteredProjects.length} of {onChainProjects.length})
+              </span>
+            ) : null}
+          </h2>
           <button
             onClick={loadProjects}
             disabled={loadingProjects}
@@ -348,9 +630,25 @@ export function ClientDashboard() {
         </div>
         
         {loadingProjects && (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-            <Loader2 className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
-            <p className="text-gray-400">Loading projects from blockchain...</p>
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4 animate-pulse">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-lg bg-gray-800"></div>
+                    <div className="space-y-2">
+                      <div className="h-4 w-32 bg-gray-800 rounded"></div>
+                      <div className="h-3 w-48 bg-gray-800 rounded"></div>
+                    </div>
+                  </div>
+                  <div className="h-6 w-20 bg-gray-800 rounded"></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="h-4 w-24 bg-gray-800 rounded"></div>
+                  <div className="h-4 w-24 bg-gray-800 rounded"></div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         
@@ -361,9 +659,20 @@ export function ClientDashboard() {
             <p className="text-gray-500 text-sm">Create your first project to get started</p>
           </div>
         )}
+
+        {/* No results after filtering */}
+        {!loadingProjects && isConnected && onChainProjects.length > 0 && filteredProjects.length === 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-400 mb-2">No projects match your search</p>
+            <p className="text-gray-500 text-sm">Try adjusting your search or filter criteria</p>
+          </div>
+        )}
         
-        {!loadingProjects && onChainProjects.map((project) => {
+        {!loadingProjects && filteredProjects.map((project) => {
           const totalBudget = getTotalBudget(project.milestones);
+          const metadata = projectMetadata[project.id];
+          const projectStatus = getProjectStatus(project);
           return (
             <div
               key={project.id}
@@ -376,29 +685,50 @@ export function ClientDashboard() {
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-white">
-                      {project.title || `Escrow Project #${project.id}`}
+                      {metadata?.title || `Escrow Project #${project.id}`}
                     </h3>
                     <p className="text-gray-400 text-xs">
-                      Budget: {totalBudget} stroops • {project.milestones?.length || 0} milestones
+                      Budget: {formatStroops(totalBudget)} • {project.milestones?.length || 0} milestones
                     </p>
                   </div>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
-                  On-Chain
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-xs font-medium border",
+                    projectStatus === 'pending' && "bg-gray-500/20 text-gray-400 border-gray-500/30",
+                    projectStatus === 'active' && "bg-blue-500/20 text-blue-400 border-blue-500/30",
+                    projectStatus === 'completed' && "bg-green-500/20 text-green-400 border-green-500/30"
+                  )}>
+                    {projectStatus.charAt(0).toUpperCase() + projectStatus.slice(1)}
+                  </span>
+                </div>
               </div>
+
+              {/* Project Description (if available) */}
+              {metadata?.description && (
+                <p className="text-gray-400 text-sm mb-3 line-clamp-2">{metadata.description}</p>
+              )}
               
               <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div>
                   <span className="text-gray-500">Freelancer:</span>
-                  <p className="text-gray-300 font-mono text-xs">
-                    {project.freelancer?.slice(0, 8)}...{project.freelancer?.slice(-4)}
-                  </p>
+                  <div className="flex items-center space-x-1">
+                    <p className="text-gray-300 font-mono text-xs">
+                      {truncateAddress(project.freelancer)}
+                    </p>
+                    <button
+                      onClick={() => copyToClipboard(project.freelancer)}
+                      className="text-gray-500 hover:text-gray-300"
+                      title="Copy address"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-gray-500">Progress:</span>
                   <p className="text-gray-300">
-                    {Number(project.total_funded || 0)} / {totalBudget} stroops funded
+                    {formatStroops(Number(project.total_funded || 0))} / {formatStroops(totalBudget)} funded
                   </p>
                 </div>
               </div>

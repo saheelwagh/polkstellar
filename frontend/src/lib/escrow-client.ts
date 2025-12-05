@@ -34,7 +34,7 @@ export async function createProject(
   clientAddress: string,
   freelancerAddress: string,
   milestoneAmounts: bigint[]
-): Promise<{ success: boolean; projectId?: number; error?: string }> {
+): Promise<{ success: boolean; projectId?: number; txHash?: string; error?: string }> {
   try {
     console.log('Creating project with generated client...');
     console.log('Client address:', clientAddress);
@@ -95,7 +95,7 @@ export async function createProject(
         } catch (e) {
           console.log('Could not parse return value, using default');
         }
-        return { success: true, projectId };
+        return { success: true, projectId, txHash: sendResult.hash };
       } else {
         return { success: false, error: `Transaction failed: ${getResult.status}` };
       }
@@ -117,7 +117,7 @@ export async function fundMilestone(
   signerAddress: string,
   projectId: number,
   milestoneIndex: number
-): Promise<{ success: boolean; amount?: number; error?: string }> {
+): Promise<{ success: boolean; amount?: number; txHash?: string; error?: string }> {
   try {
     console.log(`Funding milestone ${milestoneIndex} of project ${projectId}...`);
     
@@ -172,7 +172,7 @@ export async function fundMilestone(
         } catch (e) {
           console.log('Could not parse return value');
         }
-        return { success: true, amount };
+        return { success: true, amount, txHash: sendResult.hash };
       } else {
         return { success: false, error: `Transaction failed: ${getResult.status}` };
       }
@@ -192,7 +192,7 @@ export async function submitMilestone(
   signerAddress: string,
   projectId: number,
   milestoneIndex: number
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
     console.log(`Submitting milestone ${milestoneIndex} of project ${projectId}...`);
     
@@ -233,7 +233,7 @@ export async function submitMilestone(
       }
       
       if (getResult.status === 'SUCCESS') {
-        return { success: true };
+        return { success: true, txHash: sendResult.hash };
       } else {
         return { success: false, error: `Transaction failed: ${getResult.status}` };
       }
@@ -253,7 +253,7 @@ export async function releaseMilestone(
   signerAddress: string,
   projectId: number,
   milestoneIndex: number
-): Promise<{ success: boolean; amount?: number; error?: string }> {
+): Promise<{ success: boolean; amount?: number; txHash?: string; error?: string }> {
   try {
     console.log(`Releasing milestone ${milestoneIndex} of project ${projectId}...`);
     
@@ -308,7 +308,7 @@ export async function releaseMilestone(
         } catch (e) {
           console.log('Could not parse return value');
         }
-        return { success: true, amount };
+        return { success: true, amount, txHash: sendResult.hash };
       } else {
         return { success: false, error: `Transaction failed: ${getResult.status}` };
       }

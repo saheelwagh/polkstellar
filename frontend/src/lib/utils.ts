@@ -14,8 +14,15 @@ export function formatUSDC(amount: number): string {
   }).format(amount);
 }
 
-// Truncate wallet addresses
-export function truncateAddress(address: string): string {
+export function truncateAddress(address: string, startChars: number = 6, endChars: number = 4): string {
   if (!address) return '';
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  if (address.length <= startChars + endChars) return address;
+  return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;
+}
+
+export function formatStroops(stroops: number): string {
+  if (stroops >= 10000000) {
+    return `${(stroops / 10000000).toFixed(2)} XLM`;
+  }
+  return `${stroops.toLocaleString()} stroops`;
 }
