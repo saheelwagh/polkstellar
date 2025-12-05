@@ -23,11 +23,56 @@ interface OnChainProject {
   client: string;
   freelancer: string;
   milestones: Array<{
-    amount: bigint;
-    status: { tag: string };
+    amount: bigint | number;
+    status: any; // Can be string, {tag: string}, or {Pending: null} etc.
   }>;
-  total_funded: bigint;
-  total_released: bigint;
+  total_funded: bigint | number;
+  total_released: bigint | number;
+  // Local metadata (not on-chain)
+  title?: string;
+}
+
+// Helper to extract status tag from various formats
+// Status can be: "Pending", {Pending: null}, {tag: "Pending"}, or Array like ["Pending"] or [0]
+const STATUS_MAP: Record<number, string> = {
+  0: 'Pending',
+  1: 'Funded',
+  2: 'Submitted',
+  3: 'Approved',
+  4: 'Released',
+};
+
+function getStatusTag(status: any): string {
+  if (!status) return 'Unknown';
+  if (typeof status === 'string') return status;
+  
+  // Handle array format like [0] or ["Pending"]
+  if (Array.isArray(status)) {
+    const val = status[0];
+    if (typeof val === 'number') return STATUS_MAP[val] || 'Unknown';
+    if (typeof val === 'string') return val;
+    // Could be nested object
+    if (val && typeof val === 'object') {
+      const keys = Object.keys(val);
+      if (keys.length > 0) return keys[0];
+    }
+    return 'Unknown';
+  }
+  
+  // Handle {tag: "Pending"} format
+  if (status.tag) return status.tag;
+  
+  // Handle {Pending: null}, {Funded: null} format
+  const keys = Object.keys(status);
+  if (keys.length > 0) return keys[0];
+  
+  return 'Unknown';
+}
+
+// Helper to calculate total budget from milestones
+function getTotalBudget(milestones: Array<{amount: bigint | number}>): number {
+  if (!milestones) return 0;
+  return milestones.reduce((sum, m) => sum + Number(m.amount || 0), 0);
 }
 
 export function ClientDashboard() {
@@ -157,11 +202,12 @@ export function ClientDashboard() {
     setTxStatus('Releasing milestone funds...');
 
     try {
-      // Convert string projectId to number (for demo, use 1)
-      const result = await releaseMilestone(address, 1, milestoneId - 1);
+      const numericProjectId = typeof projectId === 'string' ? parseInt(projectId) : projectId;
+      const result = await releaseMilestone(address, numericProjectId, milestoneId);
       
       if (result.success) {
-        setTxStatus(`✅ Released ${result.amount} to freelancer!`);
+        setTxStatus(`✅ Released ${result.amount} stroops to freelancer!`);
+        loadProjects(); // Reload to see updated status
         setTimeout(() => setTxStatus(null), 3000);
       } else {
         setTxStatus(`❌ Error: ${result.error}`);
@@ -173,7 +219,34 @@ export function ClientDashboard() {
     }
   };
 
-  const handleFundMilestone = async (projectId: string, milestoneIndex: number) => {
+  // Handler for releasing milestone (for on-chain projects)
+  const handleReleaseMilestone = async (projectId: number, milestoneIndex: number) => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setIsLoading(true);
+    setTxStatus('Releasing milestone funds...');
+
+    try {
+      const result = await releaseMilestone(address, projectId, milestoneIndex);
+      
+      if (result.success) {
+        setTxStatus(`✅ Released ${result.amount} stroops to freelancer!`);
+        loadProjects(); // Reload to see updated status
+        setTimeout(() => setTxStatus(null), 3000);
+      } else {
+        setTxStatus(`❌ Error: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTxStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFundMilestone = async (projectId: number, milestoneIndex: number) => {
     if (!isConnected || !address) {
       alert('Please connect your wallet first');
       return;
@@ -183,10 +256,11 @@ export function ClientDashboard() {
     setTxStatus('Funding milestone...');
 
     try {
-      const result = await fundMilestone(address, 1, milestoneIndex);
+      const result = await fundMilestone(address, projectId, milestoneIndex);
       
       if (result.success) {
-        setTxStatus(`✅ Funded ${result.amount}!`);
+        setTxStatus(`✅ Funded ${result.amount} stroops!`);
+        loadProjects(); // Reload to see updated status
         setTimeout(() => setTxStatus(null), 3000);
       } else {
         setTxStatus(`❌ Error: ${result.error}`);
@@ -288,76 +362,107 @@ export function ClientDashboard() {
           </div>
         )}
         
-        {!loadingProjects && onChainProjects.map((project) => (
-          <div
-            key={project.id}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-blue-500/50 transition-colors"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                  <span className="text-blue-400 font-bold">#{project.id}</span>
+        {!loadingProjects && onChainProjects.map((project) => {
+          const totalBudget = getTotalBudget(project.milestones);
+          return (
+            <div
+              key={project.id}
+              className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-blue-500/50 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <span className="text-blue-400 font-bold">#{project.id}</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      {project.title || `Escrow Project #${project.id}`}
+                    </h3>
+                    <p className="text-gray-400 text-xs">
+                      Budget: {totalBudget} stroops • {project.milestones?.length || 0} milestones
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                  On-Chain
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div>
+                  <span className="text-gray-500">Freelancer:</span>
+                  <p className="text-gray-300 font-mono text-xs">
+                    {project.freelancer?.slice(0, 8)}...{project.freelancer?.slice(-4)}
+                  </p>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-white">Project #{project.id}</h3>
-                  <p className="text-gray-400 text-xs font-mono">
-                    Client: {project.client?.slice(0, 8)}...{project.client?.slice(-4)}
+                  <span className="text-gray-500">Progress:</span>
+                  <p className="text-gray-300">
+                    {Number(project.total_funded || 0)} / {totalBudget} stroops funded
                   </p>
                 </div>
               </div>
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
-                On-Chain
-              </span>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-500">Freelancer:</span>
-                <p className="text-gray-300 font-mono text-xs">
-                  {project.freelancer?.slice(0, 8)}...{project.freelancer?.slice(-4)}
-                </p>
-              </div>
-              <div>
-                <span className="text-gray-500">Milestones:</span>
-                <p className="text-gray-300">{project.milestones?.length || 0}</p>
-              </div>
-              <div>
-                <span className="text-gray-500">Total Funded:</span>
-                <p className="text-gray-300">{String(project.total_funded || 0)} stroops</p>
-              </div>
-              <div>
-                <span className="text-gray-500">Total Released:</span>
-                <p className="text-gray-300">{String(project.total_released || 0)} stroops</p>
-              </div>
-            </div>
-            
-            {project.milestones && project.milestones.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-800">
-                <p className="text-gray-500 text-sm mb-2">Milestones:</p>
-                <div className="space-y-2">
-                  {project.milestones.map((m, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
-                      <span className="text-gray-300 text-sm">Milestone {idx + 1}</span>
-                      <div className="flex items-center space-x-3">
-                        <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
-                        <span className={cn(
-                          'px-2 py-0.5 rounded text-xs',
-                          m.status?.tag === 'Pending' && 'bg-gray-500/20 text-gray-400',
-                          m.status?.tag === 'Funded' && 'bg-blue-500/20 text-blue-400',
-                          m.status?.tag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
-                          m.status?.tag === 'Approved' && 'bg-green-500/20 text-green-400',
-                          m.status?.tag === 'Released' && 'bg-purple-500/20 text-purple-400',
-                        )}>
-                          {m.status?.tag || 'Unknown'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+              
+              {project.milestones && project.milestones.length > 0 && (
+                <div className="pt-4 border-t border-gray-800">
+                  <p className="text-gray-500 text-sm mb-2">Milestones:</p>
+                  <div className="space-y-2">
+                    {project.milestones.map((m, idx) => {
+                      const statusTag = getStatusTag(m.status);
+                      return (
+                        <div key={idx} className="bg-gray-800/50 rounded-lg px-3 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-gray-300 font-medium">Milestone {idx + 1}</span>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
+                              <span className={cn(
+                                'px-2 py-0.5 rounded text-xs font-medium',
+                                statusTag === 'Pending' && 'bg-gray-500/20 text-gray-400',
+                                statusTag === 'Funded' && 'bg-blue-500/20 text-blue-400',
+                                statusTag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
+                                statusTag === 'Approved' && 'bg-green-500/20 text-green-400',
+                                statusTag === 'Released' && 'bg-purple-500/20 text-purple-400',
+                              )}>
+                                {statusTag}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Action buttons based on status */}
+                          <div className="flex items-center space-x-2 mt-2">
+                            {statusTag === 'Pending' && (
+                              <button
+                                onClick={() => handleFundMilestone(project.id, idx)}
+                                disabled={isLoading}
+                                className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white text-xs rounded transition-colors"
+                              >
+                                💰 Fund This Milestone
+                              </button>
+                            )}
+                            {statusTag === 'Funded' && (
+                              <span className="text-xs text-blue-400">⏳ Waiting for freelancer to submit work...</span>
+                            )}
+                            {statusTag === 'Submitted' && (
+                              <button
+                                onClick={() => handleReleaseMilestone(project.id, idx)}
+                                disabled={isLoading}
+                                className="flex-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white text-xs rounded transition-colors"
+                              >
+                                ✅ Approve & Release Funds
+                              </button>
+                            )}
+                            {statusTag === 'Released' && (
+                              <span className="text-xs text-purple-400">✓ Funds released to freelancer</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                  })}
                 </div>
               </div>
             )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
       {/* Mock Projects List (for reference) */}

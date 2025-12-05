@@ -4,9 +4,6 @@ import {
   Clock, 
   CheckCircle2, 
   Star,
-  ChevronRight,
-  Upload,
-  ExternalLink,
   TrendingUp,
   AlertCircle,
   RefreshCw,
@@ -34,18 +31,57 @@ interface OnChainProject {
   client: string;
   freelancer: string;
   milestones: Array<{
-    amount: bigint;
-    status: { tag: string };
+    amount: bigint | number;
+    status: any;
   }>;
-  total_funded: bigint;
-  total_released: bigint;
+  total_funded: bigint | number;
+  total_released: bigint | number;
+}
+
+// Helper to extract status tag from various formats
+// Status can be: "Pending", {Pending: null}, {tag: "Pending"}, or Array like ["Pending"] or [0]
+const STATUS_MAP: Record<number, string> = {
+  0: 'Pending',
+  1: 'Funded',
+  2: 'Submitted',
+  3: 'Approved',
+  4: 'Released',
+};
+
+function getStatusTag(status: any): string {
+  if (!status) return 'Unknown';
+  if (typeof status === 'string') return status;
+  
+  // Handle array format like [0] or ["Pending"]
+  if (Array.isArray(status)) {
+    const val = status[0];
+    if (typeof val === 'number') return STATUS_MAP[val] || 'Unknown';
+    if (typeof val === 'string') return val;
+    // Could be nested object
+    if (val && typeof val === 'object') {
+      const keys = Object.keys(val);
+      if (keys.length > 0) return keys[0];
+    }
+    return 'Unknown';
+  }
+  
+  // Handle {tag: "Pending"} format
+  if (status.tag) return status.tag;
+  
+  // Handle {Pending: null}, {Funded: null} format
+  const keys = Object.keys(status);
+  if (keys.length > 0) return keys[0];
+  
+  return 'Unknown';
+}
+
+// Helper to calculate total budget from milestones
+function getTotalBudget(milestones: Array<{amount: bigint | number}>): number {
+  if (!milestones) return 0;
+  return milestones.reduce((sum, m) => sum + Number(m.amount || 0), 0);
 }
 
 export function FreelancerDashboard() {
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [selectedMilestone, setSelectedMilestone] = useState<{ projectId: number; milestoneIndex: number } | null>(null);
-  
   // On-chain projects
   const [onChainProjects, setOnChainProjects] = useState<OnChainProject[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -129,11 +165,6 @@ export function FreelancerDashboard() {
     // const balance = await stellarContract.getBalance(freelancerAddress);
     // =============================================================================
     console.log('Withdraw funds');
-  };
-
-  const openSubmitModal = (projectId: string, milestone: Milestone) => {
-    setSubmitMilestone({ projectId, milestone });
-    setShowSubmitModal(true);
   };
 
   // Filter projects for this freelancer
@@ -240,274 +271,98 @@ export function FreelancerDashboard() {
           </div>
         )}
         
-        {!loadingProjects && onChainProjects.map((project) => (
-          <div
-            key={project.id}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-blue-500/50 transition-colors"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                  <span className="text-green-400 font-bold">#{project.id}</span>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Project #{project.id}</h3>
-                  <p className="text-gray-400 text-xs font-mono">
-                    Client: {project.client?.slice(0, 8)}...{project.client?.slice(-4)}
-                  </p>
-                </div>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
-                On-Chain
-              </span>
-            </div>
-            
-            {project.milestones && project.milestones.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-800">
-                <p className="text-gray-500 text-sm mb-2">Milestones:</p>
-                <div className="space-y-2">
-                  {project.milestones.map((m, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
-                      <span className="text-gray-300 text-sm">Milestone {idx + 1}</span>
-                      <div className="flex items-center space-x-3">
-                        <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
-                        <span className={cn(
-                          'px-2 py-0.5 rounded text-xs',
-                          m.status?.tag === 'Pending' && 'bg-gray-500/20 text-gray-400',
-                          m.status?.tag === 'Funded' && 'bg-blue-500/20 text-blue-400',
-                          m.status?.tag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
-                          m.status?.tag === 'Approved' && 'bg-green-500/20 text-green-400',
-                          m.status?.tag === 'Released' && 'bg-purple-500/20 text-purple-400',
-                        )}>
-                          {m.status?.tag || 'Unknown'}
-                        </span>
-                        {/* Submit button for funded milestones */}
-                        {m.status?.tag === 'Funded' && (
-                          <button
-                            onClick={() => handleSubmitMilestoneOnChain(project.id, idx)}
-                            className="px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-xs rounded transition-colors"
-                          >
-                            Submit Work
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Mock Projects (Demo) */}
-      <div className="space-y-4 opacity-50">
-        <h2 className="text-xl font-semibold text-white">Demo Projects (Mock Data)</h2>
-        
-        {freelancerProjects.length === 0 ? (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
-            <p className="text-gray-400">No active projects yet.</p>
-            <p className="text-gray-500 text-sm mt-1">Projects assigned to you will appear here.</p>
-          </div>
-        ) : (
-          freelancerProjects.map((project) => (
+        {!loadingProjects && onChainProjects.map((project) => {
+          const totalBudget = getTotalBudget(project.milestones);
+          return (
             <div
               key={project.id}
-              className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 transition-colors"
+              className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-green-500/50 transition-colors"
             >
-              {/* Project Header */}
-              <div
-                className="p-4 cursor-pointer"
-                onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">{project.title}</h3>
-                    <p className="text-gray-400 text-sm">Client: {project.client}</p>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <span className="text-green-400 font-bold">#{project.id}</span>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                      <p className="text-white font-medium">{formatUSDC(project.totalBudget)}</p>
-                      <p className="text-gray-400 text-sm">
-                        {formatUSDC(project.releasedAmount)} earned
-                      </p>
-                    </div>
-                    <ChevronRight className={cn(
-                      'w-5 h-5 text-gray-400 transition-transform',
-                      selectedProject?.id === project.id && 'rotate-90'
-                    )} />
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Escrow Project #{project.id}</h3>
+                    <p className="text-gray-400 text-xs">
+                      Budget: {totalBudget} stroops • Client: {project.client?.slice(0, 6)}...{project.client?.slice(-4)}
+                    </p>
                   </div>
                 </div>
-
-                {/* Progress Bar */}
-                <div className="mt-4">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-400">Milestones Completed</span>
-                    <span className="text-white">
-                      {project.milestones.filter(m => m.status === 'released').length} / {project.milestones.length}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all"
-                      style={{ 
-                        width: `${(project.milestones.filter(m => m.status === 'released').length / project.milestones.length) * 100}%` 
-                      }}
-                    />
-                  </div>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                  On-Chain
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div>
+                  <span className="text-gray-500">Your Earnings:</span>
+                  <p className="text-green-400 font-medium">{Number(project.total_released || 0)} stroops</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Pending:</span>
+                  <p className="text-yellow-400 font-medium">{totalBudget - Number(project.total_released || 0)} stroops</p>
                 </div>
               </div>
-
-              {/* Expanded Milestones */}
-              {selectedProject?.id === project.id && (
-                <div className="border-t border-gray-800 p-4 bg-gray-950/50">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">Milestones</h4>
-                  <div className="space-y-3">
-                    {project.milestones.map((milestone) => (
-                      <div
-                        key={milestone.id}
-                        className="flex items-center justify-between p-3 bg-gray-900 rounded-lg border border-gray-800"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className={cn(
-                            'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
-                            getMilestoneStatusColor(milestone.status)
-                          )}>
-                            {milestone.id}
-                          </span>
-                          <div>
-                            <p className="text-white font-medium">{milestone.title}</p>
-                            <p className="text-gray-400 text-sm">{formatUSDC(milestone.amount)}</p>
+              
+              {project.milestones && project.milestones.length > 0 && (
+                <div className="pt-4 border-t border-gray-800">
+                  <p className="text-gray-500 text-sm mb-2">Milestones:</p>
+                  <div className="space-y-2">
+                    {project.milestones.map((m, idx) => {
+                      const statusTag = getStatusTag(m.status);
+                      return (
+                        <div key={idx} className="bg-gray-800/50 rounded-lg px-3 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-gray-300 font-medium">Milestone {idx + 1}</span>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-gray-400 text-sm">{String(m.amount)} stroops</span>
+                              <span className={cn(
+                                'px-2 py-0.5 rounded text-xs font-medium',
+                                statusTag === 'Pending' && 'bg-gray-500/20 text-gray-400',
+                                statusTag === 'Funded' && 'bg-blue-500/20 text-blue-400',
+                                statusTag === 'Submitted' && 'bg-yellow-500/20 text-yellow-400',
+                                statusTag === 'Approved' && 'bg-green-500/20 text-green-400',
+                                statusTag === 'Released' && 'bg-purple-500/20 text-purple-400',
+                              )}>
+                                {statusTag}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Action buttons based on status */}
+                          <div className="flex items-center space-x-2 mt-2">
+                            {statusTag === 'Pending' && (
+                              <span className="text-xs text-gray-400">⏳ Waiting for client to fund...</span>
+                            )}
+                            {statusTag === 'Funded' && (
+                              <button
+                                onClick={() => handleSubmitMilestoneOnChain(project.id, idx)}
+                                disabled={txStatus !== null}
+                                className="flex-1 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-800 text-white text-xs rounded transition-colors"
+                              >
+                                📤 Submit Work (Mark as Done)
+                              </button>
+                            )}
+                            {statusTag === 'Submitted' && (
+                              <span className="text-xs text-yellow-400">⏳ Waiting for client approval...</span>
+                            )}
+                            {statusTag === 'Released' && (
+                              <span className="text-xs text-green-400">✓ Payment received!</span>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          {milestone.status === 'pending' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openSubmitModal(project.id, milestone);
-                              }}
-                              className="inline-flex items-center space-x-1 bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                            >
-                              <Upload className="w-4 h-4" />
-                              <span>Submit Work</span>
-                            </button>
-                          )}
-                          {milestone.status === 'submitted' && (
-                            <span className="text-yellow-400 text-sm flex items-center space-x-1">
-                              <Clock className="w-4 h-4" />
-                              <span>Awaiting Approval</span>
-                            </span>
-                          )}
-                          {milestone.status === 'released' && (
-                            <span className="text-green-400 text-sm flex items-center space-x-1">
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span>Paid</span>
-                            </span>
-                          )}
-                          {milestone.deliverableHash && (
-                            <a
-                              href={`https://ipfs.io/ipfs/${milestone.deliverableHash.replace('ipfs://', '')}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-pink-400 hover:text-pink-300"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Chain indicators */}
-                  <div className="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between text-xs">
-                    <div className="flex items-center space-x-4">
-                      <span className="flex items-center space-x-1 text-blue-400">
-                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                        <span>Payments on Stellar</span>
-                      </span>
-                      <span className="flex items-center space-x-1 text-pink-400">
-                        <span className="w-2 h-2 rounded-full bg-pink-500"></span>
-                        <span>Submissions on Polkadot</span>
-                      </span>
-                    </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
-          ))
-        )}
+          );
+        })}
       </div>
 
-      {/* Submit Deliverable Modal */}
-      {showSubmitModal && submitMilestone && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg">
-            <div className="p-6 border-b border-gray-800">
-              <h2 className="text-xl font-bold text-white">Submit Deliverable</h2>
-              <p className="text-gray-400 text-sm mt-1">
-                Milestone: {submitMilestone.milestone.title}
-              </p>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Deliverable Link or IPFS Hash
-                </label>
-                <input
-                  type="text"
-                  placeholder="ipfs://Qm... or https://..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-pink-500 font-mono text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Notes (optional)
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Any additional context for the client..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-pink-500 resize-none"
-                />
-              </div>
 
-              {/* Chain info */}
-              <div className="bg-pink-500/10 border border-pink-500/30 rounded-lg p-3 text-sm">
-                <p className="text-pink-400">
-                  <span className="font-medium">📋 Polkadot:</span> Your submission will be recorded on-chain as immutable proof of delivery.
-                </p>
-              </div>
-            </div>
-            
-            <div className="p-6 border-t border-gray-800 flex justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowSubmitModal(false);
-                  setSubmitMilestone(null);
-                }}
-                className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSubmitDeliverable(
-                  submitMilestone.projectId,
-                  submitMilestone.milestone.id,
-                  'ipfs://QmExample...'
-                )}
-                className="inline-flex items-center space-x-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Submit to Polkadot</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
