@@ -8,35 +8,28 @@ import {
   ChevronRight,
   Wallet,
   FileText,
-  Send
+  Send,
+  Loader2
 } from 'lucide-react';
 import { cn, formatUSDC } from '../lib/utils';
 import { mockProjects, mockClientStats, type Project, type Milestone } from '../lib/mock-data';
-
-// =============================================================================
-// BLOCKCHAIN CONNECTION POINTS:
-// 
-// STELLAR (Soroban) - Money operations:
-// - createProject(): Call escrow contract to create new project
-// - fundProject(): Transfer USDC to escrow contract
-// - releaseMilestone(): Release funds for approved milestone
-// - refundProject(): Reclaim funds if project cancelled
-//
-// POLKADOT (Ink!) - Verification operations:
-// - registerProject(): Store project metadata on-chain
-// - markApproved(): Record approval on Polkadot before releasing on Stellar
-//
-// Wallet connections needed:
-// - Freighter (Stellar): For signing USDC transactions
-// - Polkadot.js (Polkadot): For signing registry transactions
-// =============================================================================
+import { useWallet } from '../context/WalletContext';
+import { createProject, fundMilestone, releaseMilestone } from '../lib/escrow-contract';
 
 export function ClientDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [txStatus, setTxStatus] = useState<string | null>(null);
+  
+  // Form state
+  const [projectTitle, setProjectTitle] = useState('');
+  const [freelancerAddress, setFreelancerAddress] = useState('');
+  const [totalBudget, setTotalBudget] = useState('');
+  const [description, setDescription] = useState('');
 
-  // TODO: Replace with actual wallet connection state
-  const isWalletConnected = false;
+  // Use shared wallet context
+  const { isConnected, address } = useWallet();
 
   const getStatusColor = (status: Project['status']) => {
     switch (status) {
@@ -57,48 +50,101 @@ export function ClientDashboard() {
     }
   };
 
-  const handleCreateProject = () => {
-    // =============================================================================
-    // BLOCKCHAIN CONNECTION POINT - CREATE PROJECT:
-    // 
-    // Step 1: Call Stellar contract to create escrow
-    // const projectId = await stellarContract.createProject(freelancerAddress, milestones);
-    //
-    // Step 2: Register on Polkadot for metadata
-    // await polkadotContract.registerProject(projectId, title, description);
-    //
-    // Step 3: Fund the escrow with USDC
-    // await stellarContract.fundProject(projectId, totalAmount);
-    // =============================================================================
-    console.log('Create project - implement blockchain connection');
-    setShowCreateModal(false);
+  const handleCreateProject = async () => {
+    if (!isConnected || !address) {
+      setTxStatus('Please connect your wallet first');
+      return;
+    }
+
+    if (!freelancerAddress || !totalBudget) {
+      setTxStatus('Please fill in all required fields');
+      return;
+    }
+
+    setIsLoading(true);
+    setTxStatus('Creating project on Stellar...');
+
+    try {
+      // For demo: split budget into 2 milestones (50% each)
+      const budget = parseInt(totalBudget);
+      const milestoneAmounts = [Math.floor(budget / 2), budget - Math.floor(budget / 2)];
+      
+      console.log('Calling createProject with:', { address, freelancerAddress, milestoneAmounts });
+      const result = await createProject(address, freelancerAddress, milestoneAmounts);
+      console.log('createProject result:', result);
+      
+      if (result.success) {
+        setTxStatus(`✅ Project created! ID: ${result.projectId}`);
+        setTimeout(() => {
+          setShowCreateModal(false);
+          setTxStatus(null);
+          // Reset form
+          setProjectTitle('');
+          setFreelancerAddress('');
+          setTotalBudget('');
+          setDescription('');
+        }, 2000);
+      } else {
+        setTxStatus(`❌ Error: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      console.error('handleCreateProject catch:', err);
+      const errorMsg = err?.message || err?.toString() || JSON.stringify(err) || 'Unknown error';
+      setTxStatus(`❌ Error: ${errorMsg}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleApproveMilestone = (projectId: string, milestoneId: number) => {
-    // =============================================================================
-    // BLOCKCHAIN CONNECTION POINT - APPROVE MILESTONE:
-    //
-    // Step 1: Record approval on Polkadot (creates immutable proof)
-    // await polkadotContract.markApproved(projectId, milestoneId);
-    //
-    // Step 2: Release funds on Stellar
-    // await stellarContract.releaseMilestone(projectId, milestoneId);
-    //
-    // The frontend should wait for both transactions to confirm
-    // =============================================================================
-    console.log(`Approve milestone ${milestoneId} for project ${projectId}`);
+  const handleApproveMilestone = async (projectId: string, milestoneId: number) => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setIsLoading(true);
+    setTxStatus('Releasing milestone funds...');
+
+    try {
+      // Convert string projectId to number (for demo, use 1)
+      const result = await releaseMilestone(address, 1, milestoneId - 1);
+      
+      if (result.success) {
+        setTxStatus(`✅ Released ${result.amount} to freelancer!`);
+        setTimeout(() => setTxStatus(null), 3000);
+      } else {
+        setTxStatus(`❌ Error: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTxStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleFundProject = (projectId: string, amount: number) => {
-    // =============================================================================
-    // BLOCKCHAIN CONNECTION POINT - FUND PROJECT:
-    //
-    // await stellarContract.fundProject(projectId, amount);
-    //
-    // This transfers USDC from client wallet to escrow contract
-    // User must have Freighter wallet connected and sufficient USDC balance
-    // =============================================================================
-    console.log(`Fund project ${projectId} with ${amount} USDC`);
+  const handleFundMilestone = async (projectId: string, milestoneIndex: number) => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    setIsLoading(true);
+    setTxStatus('Funding milestone...');
+
+    try {
+      const result = await fundMilestone(address, 1, milestoneIndex);
+      
+      if (result.success) {
+        setTxStatus(`✅ Funded ${result.amount}!`);
+        setTimeout(() => setTxStatus(null), 3000);
+      } else {
+        setTxStatus(`❌ Error: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTxStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -118,8 +164,21 @@ export function ClientDashboard() {
         </button>
       </div>
 
+      {/* Transaction Status */}
+      {txStatus && (
+        <div className={cn(
+          "rounded-lg p-4 flex items-start space-x-3",
+          txStatus.includes('✅') ? "bg-green-500/10 border border-green-500/30" :
+          txStatus.includes('❌') ? "bg-red-500/10 border border-red-500/30" :
+          "bg-blue-500/10 border border-blue-500/30"
+        )}>
+          {isLoading && <Loader2 className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5 animate-spin" />}
+          <p className="text-white">{txStatus}</p>
+        </div>
+      )}
+
       {/* Wallet Warning */}
-      {!isWalletConnected && (
+      {!isConnected && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-start space-x-3">
           <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <div>
@@ -134,10 +193,10 @@ export function ClientDashboard() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Spent', value: formatUSDC(mockClientStats.totalSpent), icon: DollarSign, color: 'text-green-500' },
-          { label: 'In Escrow', value: formatUSDC(mockClientStats.inEscrow), icon: Wallet, color: 'text-blue-500' },
-          { label: 'Active Projects', value: mockClientStats.activeProjects, icon: Clock, color: 'text-yellow-500' },
-          { label: 'Completed', value: mockClientStats.completedProjects, icon: CheckCircle2, color: 'text-gray-400' },
+          { label: 'Total Spent', value: isConnected ? '0 XLM' : '--', icon: DollarSign, color: 'text-green-500' },
+          { label: 'In Escrow', value: isConnected ? '0 XLM' : '--', icon: Wallet, color: 'text-blue-500' },
+          { label: 'Active Projects', value: isConnected ? '0' : '--', icon: Clock, color: 'text-yellow-500' },
+          { label: 'Completed', value: isConnected ? '0' : '--', icon: CheckCircle2, color: 'text-gray-400' },
         ].map((stat) => (
           <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center space-x-2 mb-2">
@@ -152,6 +211,14 @@ export function ClientDashboard() {
       {/* Projects List */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-white">Your Projects</h2>
+        
+        {isConnected && mockProjects.length === 0 && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+            <FileText className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-400 mb-2">No projects yet</p>
+            <p className="text-gray-500 text-sm">Create your first project to get started</p>
+          </div>
+        )}
         
         {mockProjects.map((project) => (
           <div
@@ -278,8 +345,8 @@ export function ClientDashboard() {
 
       {/* Create Project Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg my-8">
             <div className="p-6 border-b border-gray-800">
               <h2 className="text-xl font-bold text-white">Create New Project</h2>
               <p className="text-gray-400 text-sm mt-1">Define your project and milestones</p>
@@ -290,6 +357,8 @@ export function ClientDashboard() {
                 <label className="block text-sm font-medium text-gray-300 mb-2">Project Title</label>
                 <input
                   type="text"
+                  value={projectTitle}
+                  onChange={(e) => setProjectTitle(e.target.value)}
                   placeholder="e.g., Website Redesign"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 />
@@ -299,24 +368,32 @@ export function ClientDashboard() {
                 <label className="block text-sm font-medium text-gray-300 mb-2">Freelancer Address</label>
                 <input
                   type="text"
-                  placeholder="G..."
+                  value={freelancerAddress}
+                  onChange={(e) => setFreelancerAddress(e.target.value)}
+                  placeholder="G... (Stellar address)"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono text-sm"
                 />
+                <p className="text-gray-500 text-xs mt-1">For testing, you can use your own address</p>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Total Budget (USDC)</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Total Budget (XLM in stroops)</label>
                 <input
                   type="number"
-                  placeholder="1000"
+                  value={totalBudget}
+                  onChange={(e) => setTotalBudget(e.target.value)}
+                  placeholder="10000000"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 />
+                <p className="text-gray-500 text-xs mt-1">1 XLM = 10,000,000 stroops. Will be split into 2 milestones.</p>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
                 <textarea
                   rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe the project scope..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none"
                 />
@@ -333,19 +410,40 @@ export function ClientDashboard() {
               </div>
             </div>
             
+            {/* Modal status */}
+            {txStatus && (
+              <div className="px-6 py-3 bg-gray-800/50">
+                <p className={cn(
+                  "text-sm",
+                  txStatus.includes('✅') ? "text-green-400" :
+                  txStatus.includes('❌') ? "text-red-400" :
+                  "text-blue-400"
+                )}>{txStatus}</p>
+              </div>
+            )}
+
             <div className="p-6 border-t border-gray-800 flex justify-end space-x-3">
               <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setTxStatus(null);
+                }}
+                disabled={isLoading}
+                className="px-4 py-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateProject}
-                className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                disabled={isLoading || !isConnected}
+                className="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
               >
-                <Send className="w-4 h-4" />
-                <span>Create & Fund</span>
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                <span>{isLoading ? 'Creating...' : 'Create Project'}</span>
               </button>
             </div>
           </div>
