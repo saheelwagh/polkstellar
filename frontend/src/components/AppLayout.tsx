@@ -55,8 +55,9 @@ export function AppLayout() {
               })}
             </div>
 
-            {/* Wallet Connection */}
-            <div className="flex items-center space-x-4">
+            {/* Wallet Connections */}
+            <div className="flex items-center space-x-3 md:space-x-4">
+              {/* Stellar Wallet */}
               {isConnected ? (
                 <div className="flex items-center space-x-3">
                   <div className="hidden sm:flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg">
@@ -76,7 +77,7 @@ export function AppLayout() {
                 <button
                   onClick={connect}
                   disabled={isConnecting}
-                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-4 py-2 rounded-lg transition-colors"
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white px-3 py-2 rounded-lg transition-colors text-sm"
                 >
                   {isConnecting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -84,10 +85,13 @@ export function AppLayout() {
                     <Wallet className="w-4 h-4" />
                   )}
                   <span className="hidden sm:inline">
-                    {isConnecting ? 'Connecting...' : 'Connect Stellar Wallet'}
+                    {isConnecting ? 'Connecting...' : 'Stellar'}
                   </span>
                 </button>
               )}
+
+              {/* Polkadot Wallet */}
+              <PolkadotWallet />
 
               {/* Mobile menu button */}
               <button
@@ -128,16 +132,6 @@ export function AppLayout() {
           </div>
         )}
       </nav>
-
-      {/* Polkadot Wallet Section - Full Width Below Header */}
-      <div className="w-full bg-gradient-to-r from-purple-900/40 to-purple-800/40 border-b border-purple-500/50 py-4">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-sm text-purple-300 font-medium">Polkadot Wallet</p>
-            <PolkadotWallet />
-          </div>
-        </div>
-      </div>
 
       {/* Error display */}
       {error && (
