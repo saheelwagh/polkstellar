@@ -153,6 +153,7 @@ This platform can be used by freelancers and clients who wish to maintain a trus
 ## 🚧 Challenges & Solutions
 
 Polkadot frontend integration is harder than stellar.
+
 ## 🔮 Future Improvements
 
 
