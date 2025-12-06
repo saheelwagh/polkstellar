@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { ClientDashboard } from './pages/ClientDashboard';
 import { FreelancerDashboard } from './pages/FreelancerDashboard';
 import { PolkadotTestPage } from './pages/PolkadotTestPage';
+import { PolkadotDashboard } from './pages/PolkadotDashboard';
 
 // Polkadot network configuration
 const POLKADOT_NETWORKS = [
@@ -39,12 +40,21 @@ function App() {
             {/* Test page - Polkadot button test (not in navigation) */}
             <Route path="/polkadot-test" element={<PolkadotTestPage />} />
             
-            {/* App routes - wrapped with both Stellar and Polkadot providers */}
+            {/* ============================================================ */}
+            {/* STELLAR ROUTES - Dark theme, existing functionality */}
+            {/* ============================================================ */}
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="client" element={<ClientDashboard />} />
               <Route path="freelancer" element={<FreelancerDashboard />} />
             </Route>
+            
+            {/* ============================================================ */}
+            {/* POLKADOT ROUTES - Light theme, separate from Stellar */}
+            {/* These routes are completely independent to avoid breaking Stellar */}
+            {/* ============================================================ */}
+            <Route path="/polkadot" element={<PolkadotDashboard />} />
+            <Route path="/polkadot/project/:projectId" element={<PolkadotDashboard />} />
           </Routes>
         </TypinkProvider>
       </WalletProvider>

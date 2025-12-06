@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { Home, Briefcase, User, Wallet, Menu, X, Loader2 } from 'lucide-react';
+import { Home, Briefcase, User, Wallet, Menu, X, Loader2, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
 import { useWallet } from '../context/WalletContext';
@@ -17,6 +17,9 @@ export function AppLayout() {
     { path: '/app/client', label: 'Client', icon: Briefcase },
     { path: '/app/freelancer', label: 'Freelancer', icon: User },
   ];
+
+  // Polkadot dashboard link (separate route, not breaking Stellar)
+  const polkadotLink = { path: '/polkadot', label: 'Polkadot', icon: ExternalLink };
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -53,6 +56,14 @@ export function AppLayout() {
                   </Link>
                 );
               })}
+              {/* Polkadot Dashboard Link - Separate from Stellar */}
+              <Link
+                to={polkadotLink.path}
+                className="flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 hover:text-purple-300 border border-purple-500/30"
+              >
+                <polkadotLink.icon className="w-4 h-4" />
+                <span>{polkadotLink.label}</span>
+              </Link>
             </div>
 
             {/* Wallet Connections */}
